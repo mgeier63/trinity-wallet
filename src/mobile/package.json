@@ -24,8 +24,8 @@
     "postinstall": "./node_modules/.bin/rn-nodeify --hack --install && rm ./node_modules/react-native/Libraries/polyfills/babelHelpers.js && cp babelHelpersCopy ./node_modules/react-native/Libraries/polyfills/babelHelpers.js && yarn nodejs-deps",
     "prepare-release": "yarn version && cd ios && bundle exec fastlane release && cd ../android && bundle exec fastlane release && cd .. && echo Successfully incremented version and build numbers! Please remember to run git add ., git commit, git push --tags, and git push",
     "audit": "./../../node_modules/.bin/auditjs -l error -w whitelist.json",
-    "snyk-protect": "snyk protect",
-    "prepare": "npm run snyk-protect"
+    "snyk-protect": "",
+    "prepare": ""
   },
   "dependencies": {
     "assert": "^1.4.1",
@@ -106,6 +106,8 @@
     "redux-thunk": "^2.2.0",
     "rn-fetch-blob": "^0.10.13",
     "shared-modules": "../shared/",
+    "libs": "../mobile/src/libs/",
+    "ui": "../mobile/src/ui/",
     "snyk": "^1.96.0",
     "stream": "0.0.2",
     "stream-browserify": "^1.0.0",
@@ -207,5 +209,5 @@
     "vm": "vm-browserify",
     "tls": false
   },
-  "snyk": true
+  "snyk": false
 }

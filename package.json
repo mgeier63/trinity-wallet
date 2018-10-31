@@ -26,8 +26,8 @@
     "start:desktop": "cd src/desktop && yarn start",
     "start:mobile": "cd src/mobile && yarn start",
     "start:styleguide": "cd src/desktop && yarn run styleguide",
-    "snyk-protect": "snyk protect",
-    "prepare": "npm run snyk-protect"
+    "snyk-protect": "",
+    "prepare": ""
   },
   "lint-staged": {
     "*.{js,json,css}": [
@@ -56,5 +56,5 @@
   "dependencies": {
     "snyk": "^1.96.0"
   },
-  "snyk": true
+  "snyk": false
 }
