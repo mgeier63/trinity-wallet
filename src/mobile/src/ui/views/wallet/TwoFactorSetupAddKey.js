@@ -16,6 +16,9 @@ import { width, height } from 'libs/dimensions';
 import { Icon } from 'ui/theme/icons';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 
+const TWOFA_ACCOUNT_NAME = 'Trinity Wallet Mobile';
+const TWOFA_ISSUER_NAME = '';
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -89,6 +92,8 @@ export class TwoFactorSetupAddKey extends Component {
         this.state = {
             authKey: authenticator.generateKey(),
         };
+
+        console.log('QQQQQQQQQQ  TwoFactorSetupAddKey  state.authKey=: ' + this.state.authKey);
     }
 
     componentDidMount() {
@@ -170,6 +175,10 @@ export class TwoFactorSetupAddKey extends Component {
         const backgroundColor = { backgroundColor: body.bg };
         const textColor = { color: body.color };
 
+        console.log('QQQQQQQQQQ  TwoFactorSetupAddKey  this.state.authKey=: ' + this.state.authKey);
+        console.log('QQQQQQQQQQ  TwoFactorSetupAddKey  TWOFA_ACCOUNT_NAME=: ' + TWOFA_ACCOUNT_NAME);
+        const totpUri = authenticator.generateTotpUri(this.state.authKey, TWOFA_ACCOUNT_NAME, TWOFA_ISSUER_NAME);
+        console.log('QQQQQQQQQQ  TwoFactorSetupAddKey  totpUri=: ' + totpUri);
         return (
             <View style={[styles.container, backgroundColor]}>
                 <View style={styles.topWrapper}>
@@ -179,12 +188,7 @@ export class TwoFactorSetupAddKey extends Component {
                     <View style={{ flex: 0.4 }} />
                     <Text style={[styles.subHeaderText, textColor]}>{t('addKey')}</Text>
                     <View style={styles.qrContainer}>
-                        <QRCode
-                            value={authenticator.generateTotpUri(this.state.authKey, 'Trinity Wallet Mobile')}
-                            size={height / 5}
-                            bgColor="#000"
-                            fgColor="#FFF"
-                        />
+                        <QRCode value={totpUri} size={height / 5} bgColor="#000" fgColor="#FFF" />
                     </View>
                     <TouchableOpacity onPress={() => this.onKeyPress(this.state.authKey)}>
                         <Text style={[styles.infoText, textColor]}>

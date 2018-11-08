@@ -1,8 +1,8 @@
 <resources>
     <!-- We'll use 'background' name to reference this color -->
     <!-- Replace #HEX_VALUE with Your color -->
-    <color name="primary_dark">#181818</color>
-    <color name="ic_background">#181818</color>
+    <color name="primary_dark">#686868</color>
+    <color name="ic_background">#686868</color>
 
     <color name="white">#FFFFFF</color>
 

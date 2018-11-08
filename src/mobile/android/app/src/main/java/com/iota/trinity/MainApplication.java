@@ -9,6 +9,9 @@ import com.facebook.react.ReactPackage;
 import com.facebook.react.shell.MainReactPackage;
 import com.horcrux.svg.SvgPackage;
 import com.learnium.RNDeviceInfo.RNDeviceInfo;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.reactnative.camera.RNCameraPackage;
 import com.oblador.keychain.KeychainPackage;
 import com.peel.react.rnos.RNOSModule;
@@ -43,6 +46,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import ca.jaysoo.extradimensions.ExtraDimensionsPackage;
+import timber.log.Timber;
 
 public class MainApplication extends NavigationApplication implements ShareApplication {
 
@@ -53,6 +57,10 @@ public class MainApplication extends NavigationApplication implements ShareAppli
         System.loadLibrary("dummy");
 
         MultiDex.install(this);
+
+        if (isDebug()) {
+            Timber.plant(new Timber.DebugTree());
+        }
     }
 
     @Override

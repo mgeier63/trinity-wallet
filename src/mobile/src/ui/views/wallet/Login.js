@@ -139,6 +139,7 @@ class Login extends Component {
                 );
             }
             const verified = authenticator.verifyToken(key, token);
+            console.log('QQQQQQQQQQ  Login.onComplete2FA  key=: ' + key + '  token=' + token);
             if (verified) {
                 this.navigateToLoading();
                 this.props.setLoginRoute('login');

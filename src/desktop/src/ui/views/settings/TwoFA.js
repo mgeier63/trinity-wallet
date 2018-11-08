@@ -17,6 +17,10 @@ import Clipboard from 'ui/components/Clipboard';
 
 import css from './twoFa.scss';
 
+/* eslint-disable no-unused-vars */
+const TWOFA_ACCOUNT_NAME = 'Trinity desktop wallet';
+const TWOFA_ISSUER_NAME = '';
+
 /**
  * Two-factor authentication settings container
  */
@@ -42,6 +46,7 @@ class TwoFA extends React.Component {
             code: '',
             passwordConfirm: false,
         };
+        console.log('QQQQQQQQQQ  TwoFA()  authKey=: ' + this.state.key);
     }
 
     /**
@@ -69,6 +74,7 @@ class TwoFA extends React.Component {
             e.preventDefault();
         }
 
+        console.log('QQQQQQQQQQ  TwoFA.verifyCode  key=: ' + key);
         const validCode = authenticator.verifyToken(key, code);
 
         if (validCode) {
@@ -86,7 +92,7 @@ class TwoFA extends React.Component {
     enableTwoFA(password) {
         const { key } = this.state;
         const { generateAlert, set2FAStatus, t } = this.props;
-
+        console.log('QQQQQQQQQQ  TwoFA.enableTwoFA  key=: ' + key);
         try {
             setTwoFA(password, key);
             set2FAStatus(true);
@@ -114,6 +120,7 @@ class TwoFA extends React.Component {
 
         try {
             const key = await authorize(password);
+            console.log('QQQQQQQQQQ  TwoFA.disableTwoFA  key=: ' + key);
             const validCode = authenticator.verifyToken(key, code);
 
             if (!validCode) {
@@ -133,7 +140,7 @@ class TwoFA extends React.Component {
                 code: '',
                 passwordConfirm: false,
             });
-
+            console.log('QQQQQQQQQQ  TwoFA.disableTwoFA.newState  key=: ' + this.state.key);
             generateAlert('success', t('twoFA:twoFADisabled'), t('twoFA:twoFADisabledExplanation'));
         } catch (err) {
             generateAlert(
@@ -176,8 +183,8 @@ class TwoFA extends React.Component {
         }
 
         const qr = new QRCode(-1, 1);
-
-        qr.addData(authenticator.generateTotpUri(key, 'Trinity desktop wallet'));
+        console.log('QQQQQQQQQQ  TwoFA.enableTwoFAview  key=: ' + key);
+        qr.addData(authenticator.generateTotpUri(key, TWOFA_ACCOUNT_NAME, TWOFA_ISSUER_NAME));
         qr.make();
 
         const cells = qr.modules;

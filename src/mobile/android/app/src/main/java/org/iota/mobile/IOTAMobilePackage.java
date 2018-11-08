@@ -5,6 +5,8 @@ import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.uimanager.ViewManager;
 
+import org.iota.mobile.yubikey.YubikeyAndroid;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -16,6 +18,7 @@ public class IOTAMobilePackage implements ReactPackage {
 
         modules.add(new EntangledAndroid(reactContext));
         modules.add(new Argon2Android(reactContext));
+        modules.add(new YubikeyAndroid(reactContext));
 
         return modules;
     }

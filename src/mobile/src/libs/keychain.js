@@ -29,7 +29,9 @@ export const keychain = {
                             nonce: get(credentials, 'username'),
                             item: get(credentials, 'password'),
                         };
-
+                        console.log(
+                            'QQQQQQQQQQ  GET alias=' + alias + ' nonce=' + payload.nonce + ' item=' + payload.item,
+                        );
                         resolve(payload);
                     }
                 })
@@ -38,6 +40,7 @@ export const keychain = {
     },
     clear: (alias) => {
         return new Promise((resolve, reject) => {
+            console.log('QQQQQQQQQQ  CLEAR alias=' + alias);
             Keychain.resetInternetCredentials(alias)
                 .then(() => resolve())
                 .catch((err) => reject(err));
@@ -45,6 +48,7 @@ export const keychain = {
     },
     set: (alias, nonce, item) => {
         return new Promise((resolve, reject) => {
+            console.log('QQQQQQQQQQ  SET alias=' + alias + ' nonce=' + nonce + ' item=' + item);
             Keychain.setInternetCredentials(alias, nonce, item)
                 .then(() => resolve())
                 .catch((err) => reject(err));
@@ -53,6 +57,9 @@ export const keychain = {
 };
 
 export const getSecretBoxFromKeychainAndOpenIt = async (alias, keyUInt8) => {
+    console.trace();
+    console.log('QQQQQQQQQQXX  getSecretBoxFromKeychainAndOpenIt alias=' + alias + ' key=' + toHexString(keyUInt8));
+
     const secretBox = await keychain.get(alias);
     if (secretBox) {
         const box = await decodeBase64(secretBox.item);
@@ -65,7 +72,9 @@ export const getSecretBoxFromKeychainAndOpenIt = async (alias, keyUInt8) => {
 export const hash = async (password) => {
     const saltItem = await keychain.get(ALIAS_SALT);
     const salt = await decodeBase64(saltItem.item);
-    return await generatePasswordHash(password, salt);
+    const r = await generatePasswordHash(password, salt);
+    console.log('QQQQQQQQQQ  hash password=' + password + ' >> hash=' + toHexString(r));
+    return r;
 };
 
 export const doesSaltExistInKeychain = () => {
@@ -78,12 +87,14 @@ export const doesSaltExistInKeychain = () => {
 };
 
 export const storeSaltInKeychain = async (salt) => {
+    console.log('QQQQQQQQQQ  storeSaltInKeychain  salt=' + toHexString(salt));
     const nonce64 = await encodeBase64(await getNonce());
     const salt64 = await encodeBase64(salt);
     await keychain.set(ALIAS_SALT, nonce64, salt64);
 };
 
 export const createAndStoreBoxInKeychain = async (key, message, alias) => {
+    console.log('QQQQQQQQQQ  createAndStoreBoxInKeychain  key=' + key + ' message=' + message + ' alias=' + alias);
     const nonce = await getNonce();
     const box = await encodeBase64(await createSecretBox(stringToUInt8(serialise(message)), nonce, key));
     const nonce64 = await encodeBase64(nonce);
@@ -91,15 +102,23 @@ export const createAndStoreBoxInKeychain = async (key, message, alias) => {
 };
 
 export const authorize = async (pwdHash) => {
+    console.log('QQQQQQQQQQ  authorize  pwdHash=: ' + toHexString(pwdHash));
     await getSecretBoxFromKeychainAndOpenIt(ALIAS_SEEDS, pwdHash);
     return true;
 };
 
 export const getTwoFactorAuthKeyFromKeychain = async (pwdHash) => {
-    return await getSecretBoxFromKeychainAndOpenIt(ALIAS_AUTH, pwdHash);
+    const r = await getSecretBoxFromKeychainAndOpenIt(ALIAS_AUTH, pwdHash);
+    console.log('QQQQQQQQQQ  getTwoFactorAuthKeyFromKeychain pwdHash=' + toHexString(pwdHash) + ' authKey=: ' + r);
+    return r;
+    //return await getSecretBoxFromKeychainAndOpenIt(ALIAS_AUTH, pwdHash);
 };
 
 export const storeTwoFactorAuthKeyInKeychain = async (pwdHash, authKey) => {
+    console.log(
+        'QQQQQQQQQQ  storeTwoFactorAuthKeyInKeychain pwdHash=' + toHexString(pwdHash) + ' authKey=: ' + authKey,
+    );
+
     // Should only allow storing two factor authkey if the user has an account
     const info = await keychain.get(ALIAS_SEEDS);
     const shouldNotAllow = !info;
@@ -141,5 +160,13 @@ export const changePassword = async (oldPwdHash, newPwdHash, salt) => {
     }
     return Promise.resolve();
 };
+
+function toHexString(byteArray) {
+    return Array.prototype.map
+        .call(byteArray, function(byte) {
+            return ('0' + (byte & 0xff).toString(16)).slice(-2);
+        })
+        .join('');
+}
 
 export default keychain;
