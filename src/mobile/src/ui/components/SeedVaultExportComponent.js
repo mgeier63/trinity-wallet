@@ -17,6 +17,7 @@ import SeedStore from 'libs/SeedStore';
 import { width, height } from 'libs/dimensions';
 import { isAndroid, getAndroidFileSystemPermissions } from 'libs/device';
 import { removeNonAlphaNumeric } from 'shared-modules/libs/utils';
+import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
 import InfoBox from './InfoBox';
 import Button from './Button';
 import CustomTextInput from './CustomTextInput';
@@ -90,16 +91,22 @@ class SeedVaultExportComponent extends Component {
         setAuthenticated: PropTypes.func,
         /** Sets seed variable in parent component following successful SeedVault import */
         setSeed: PropTypes.func.isRequired,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    constructor() {
-        super();
+    constructor(props) {
+        super(props);
         this.state = {
             password: '',
             reentry: '',
             path: '',
             saveToDownloadFolder: false,
         };
+        applyYubikeyMixinMobile(this, props.yubikeySettings);
     }
 
     componentWillMount() {
@@ -268,13 +275,29 @@ class SeedVaultExportComponent extends Component {
      *
      * @method validateWalletPassword
      */
-    async validateWalletPassword() {
+    async validateWalletPassword(yubikeyHashedPassword = null) {
         const { t, storedPasswordHash, selectedAccountName, selectedAccountMeta } = this.props;
         const { password } = this.state;
         if (!password) {
             this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
         } else {
-            const enteredPasswordHash = await hash(password);
+            //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
+            if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
+                return;
+            }
+
+            let enteredPasswordHash = null;
+
+            if (yubikeyHashedPassword !== null) {
+                enteredPasswordHash = yubikeyHashedPassword;
+            } else {
+                try {
+                    enteredPasswordHash = await hash(password);
+                } catch (err) {
+                    generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+                }
+            }
+
             if (isEqual(enteredPasswordHash, storedPasswordHash)) {
                 const seedStore = new SeedStore[selectedAccountMeta.type](enteredPasswordHash, selectedAccountName);
                 const seed = await seedStore.getSeed();
@@ -289,6 +312,36 @@ class SeedVaultExportComponent extends Component {
                 t('global:unrecognisedPassword'),
                 t('global:unrecognisedPasswordExplanation'),
             );
+        }
+    }
+
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings } = this.props;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(this.state.password);
+        } catch (err) {
+            //console.error(err);
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.validateWalletPassword(pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
         }
     }
 
@@ -314,6 +367,10 @@ class SeedVaultExportComponent extends Component {
         const { t, theme } = this.props;
         const { password, reentry } = this.state;
         const textColor = { color: theme.body.color };
+
+        if (!this.isYubikeyIdle()) {
+            return this.renderYubikey();
+        }
 
         return (
             <Animated.View style={[styles.container, { transform: [{ translateX: this.animatedValue }] }]}>
@@ -413,6 +470,8 @@ const mapStateToProps = (state) => ({
     theme: state.settings.theme,
     minimised: state.ui.minimised,
     storedPasswordHash: state.wallet.password,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

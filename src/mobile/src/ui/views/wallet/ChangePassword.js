@@ -15,6 +15,7 @@ import { Icon } from 'ui/theme/icons';
 import InfoBox from 'ui/components/InfoBox';
 import PasswordFields from 'ui/components/PasswordFields';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
+import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
 
 const styles = StyleSheet.create({
     container: {
@@ -82,15 +83,22 @@ class ChangePassword extends Component {
         theme: PropTypes.object.isRequired,
         /** @ignore */
         t: PropTypes.func.isRequired,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    constructor() {
-        super();
+    constructor(props) {
+        super(props);
         this.state = {
             currentPassword: '',
             newPassword: '',
             newPasswordReentry: '',
         };
+
+        applyYubikeyMixinMobile(this, props.yubikeySettings);
     }
 
     componentDidMount() {
@@ -102,18 +110,52 @@ class ChangePassword extends Component {
      *
      * @method onAcceptPassword
      */
-    async onAcceptPassword() {
+    async onAcceptPassword(yubiHashedPasswordCur = null, yubiHashedPasswordNew = null) {
         const { currentPwdHash, setPassword, generateAlert, t } = this.props;
         const { newPassword } = this.state;
+
+        if (this.shouldStartYubikey(yubiHashedPasswordNew === null)) {
+            return;
+        }
+
         const salt = await getSalt();
-        const newPwdHash = await generatePasswordHash(newPassword, salt);
-        changePassword(currentPwdHash, newPwdHash, salt)
+        const passwordNewHash =
+            yubiHashedPasswordNew !== null ? yubiHashedPasswordNew : await generatePasswordHash(newPassword, salt);
+        const passwordCurrentHash = yubiHashedPasswordCur !== null ? yubiHashedPasswordCur : currentPwdHash;
+
+        changePassword(passwordCurrentHash, passwordNewHash, salt)
             .then(() => {
-                setPassword(newPwdHash);
+                setPassword(passwordNewHash);
                 generateAlert('success', t('passwordUpdated'), t('passwordUpdatedExplanation'));
                 this.props.setSetting('securitySettings');
             })
             .catch(() => generateAlert('error', t('somethingWentWrong'), t('somethingWentWrongTryAgain')));
+    }
+
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { currentPassword, newPassword } = this.state;
+        const { t, yubikeySettings } = this.props;
+        try {
+            const passwordNewHash = await hash(newPassword);
+            const passwordCurrentHash = await hash(currentPassword);
+
+            const aPwYubiHashedCurrent = await this.doChallengeResponseThenSaltedHash(passwordCurrentHash);
+            const aPwYubiHashedNew = await this.doChallengeResponseThenSaltedHash(passwordNewHash);
+
+            if (aPwYubiHashedCurrent !== null && aPwYubiHashedNew !== null) {
+                postResultDelayed(async () => {
+                    this.onAcceptPassword(aPwYubiHashedCurrent, aPwYubiHashedNew);
+                });
+                return;
+            }
+        } catch (err2) {
+            //console.error(err2);
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
     }
 
     /**
@@ -122,9 +164,9 @@ class ChangePassword extends Component {
      * @method isPasswordChangeValid
      */
     async isPasswordChangeValid() {
-        const { t, currentPwdHash, generateAlert } = this.props;
+        const { t, currentPwdHash, generateAlert, is2FAEnabledYubikey } = this.props;
         const currentPasswordHash = await hash(this.state.currentPassword);
-        if (!isEqual(currentPwdHash, currentPasswordHash)) {
+        if (!isEqual(currentPwdHash, currentPasswordHash) && !is2FAEnabledYubikey) {
             return generateAlert('error', t('incorrectPassword'), t('incorrectPasswordExplanation'));
         } else if (this.state.newPassword === this.state.currentPassword) {
             return generateAlert('error', t('oldPassword'), t('oldPasswordExplanation'));
@@ -216,6 +258,8 @@ class ChangePassword extends Component {
 const mapStateToProps = (state) => ({
     currentPwdHash: state.wallet.password,
     theme: state.settings.theme,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

@@ -33,7 +33,8 @@ export const ActionTypes = {
     SET_LOCK_SCREEN_TIMEOUT: 'IOTA/SETTINGS/SET_LOCK_SCREEN_TIMEOUT',
     SET_VERSIONS: 'IOTA/SETTINGS/WALLET/SET_VERSIONS',
     WALLET_RESET: 'IOTA/SETTINGS/WALLET/RESET',
-    SET_2FA_STATUS: 'IOTA/SETTINGS/SET_2FA_STATUS',
+    SET_2FA_STATUS_OTP: 'IOTA/SETTINGS/SET_2FA_STATUS_OTP',
+    SET_2FA_STATUS_YUBIKEY: 'IOTA/SETTINGS/SET_2FA_STATUS_YUBIKEY',
     SET_FINGERPRINT_STATUS: 'IOTA/SETTINGS/SET_FINGERPRINT_STATUS',
     ACCEPT_TERMS: 'IOTA/SETTINGS/ACCEPT_TERMS',
     ACCEPT_PRIVACY: 'IOTA/SETTINGS/ACCEPT_PRIVACY',
@@ -44,6 +45,7 @@ export const ActionTypes = {
     SET_TRAY: 'IOTA/SETTINGS/SET_TRAY',
     SET_NOTIFICATIONS: 'IOTA/SETTINGS/SET_NOTIFICATIONS',
     SET_PROXY: 'SET_PROXY',
+    SET_YUBIKEY: 'IOTA/SETTINGS/SET_YUBIKEY',
 };
 
 /**
@@ -598,13 +600,26 @@ export function resetWallet() {
 /**
  * Dispatch to update wallet's two factor authentication configuration
  *
- * @method set2FAStatus
+ * @method set2FAStatusOtp
  * @param {boolean} payload
  *
  * @returns {{type: {string}, payload: {boolean} }}
  */
-export const set2FAStatus = (payload) => ({
-    type: ActionTypes.SET_2FA_STATUS,
+export const set2FAStatusOtp = (payload) => ({
+    type: ActionTypes.SET_2FA_STATUS_OTP,
+    payload,
+});
+
+/**
+ * Dispatch to update wallet's two factor authentication configuration
+ *
+ * @method set2FAStatusYubikey
+ * @param {boolean} payload
+ *
+ * @returns {{type: {string}, payload: {boolean} }}
+ */
+export const set2FAStatusYubikey = (payload) => ({
+    type: ActionTypes.SET_2FA_STATUS_YUBIKEY,
     payload,
 });
 
@@ -687,5 +702,18 @@ export const setNotifications = (payload) => ({
  */
 export const setProxy = (payload) => ({
     type: ActionTypes.SET_PROXY,
+    payload,
+});
+
+/**
+ * Dispatch to set some yubikey related settings
+ *
+ * @method setYubikey
+ * @param {{slot: {int}}}} payload
+ *
+ * @returns {{type: {string}, payload: {object} }}
+ */
+export const setYubikey = (payload) => ({
+    type: ActionTypes.SET_YUBIKEY,
     payload,
 });

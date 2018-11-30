@@ -27,6 +27,7 @@ import ThemeCustomisation from 'ui/views/wallet/ThemeCustomisation';
 import SnapshotTransition from 'ui/views/wallet/SnapshotTransition';
 import SecuritySettings from 'ui/views/wallet/SecuritySettings';
 import SeedVaultSettings from 'ui/views/wallet/SeedVaultSettings';
+import YubikeySettingsComponent from 'ui/views/wallet/YubikeySettings';
 import About from 'ui/views/wallet/About';
 import { Icon } from 'ui/theme/icons';
 import { width, height } from 'libs/dimensions';
@@ -56,6 +57,7 @@ const SETTINGS_COMPONENTS = {
     autoPromotion: AutoPromotion,
     about: About,
     exportSeedVault: SeedVaultSettings,
+    yubikeySettings: YubikeySettingsComponent,
 };
 
 const SettingsContent = ({ component, ...props }) => {

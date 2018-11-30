@@ -17,7 +17,7 @@ describe('Reducer: wallet', () => {
                 hasConnection: true,
                 isValidatingAddress: false,
                 forceUpdate: false,
-                shouldUpdate: false
+                shouldUpdate: false,
             };
 
             expect(reducer(undefined, {})).to.eql(initialState);

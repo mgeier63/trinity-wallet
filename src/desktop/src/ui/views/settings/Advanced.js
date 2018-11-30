@@ -13,6 +13,7 @@ import {
     setTray,
     setNotifications,
     setProxy,
+    setYubikey,
 } from 'actions/settings';
 
 import { generateAlert } from 'actions/alerts';
@@ -42,6 +43,8 @@ class Advanced extends PureComponent {
         setProxy: PropTypes.func.isRequired,
         /** @ignore */
         setNotifications: PropTypes.func.isRequired,
+        /** @ignore */
+        setYubikey: PropTypes.func.isRequired,
         /** @ignore */
         changePowSettings: PropTypes.func.isRequired,
         /** @ignore */
@@ -127,6 +130,7 @@ class Advanced extends PureComponent {
             setTray,
             setNotifications,
             setProxy,
+            setYubikey,
             t,
         } = this.props;
 
@@ -177,7 +181,8 @@ class Advanced extends PureComponent {
                             <Toggle
                                 checked={settings.notifications.general}
                                 onChange={() =>
-                                    setNotifications({ type: 'general', enabled: !settings.notifications.general })}
+                                    setNotifications({ type: 'general', enabled: !settings.notifications.general })
+                                }
                                 on={t('enabled')}
                                 off={t('disabled')}
                             />
@@ -206,7 +211,6 @@ class Advanced extends PureComponent {
                             <hr />
                         </React.Fragment>
                     ) : null}
-
                     <React.Fragment>
                         <h3>{t('proxy:proxy')}</h3>
                         <Toggle
@@ -219,6 +223,30 @@ class Advanced extends PureComponent {
                         <hr />
                     </React.Fragment>
 
+                    <h3>{t('yubikey:yubikeySettings')}</h3>
+                    <div>
+                        <Checkbox
+                            checked={settings.yubikey.slot === 1}
+                            label={t('yubikey:slot1')}
+                            className="small"
+                            onChange={(checked) => {
+                                if (checked) {
+                                    setYubikey({ slot: 1 });
+                                }
+                            }}
+                        />
+                        <Checkbox
+                            checked={settings.yubikey.slot === 2}
+                            label={t('yubikey:slot2')}
+                            className="small"
+                            onChange={(checked) => {
+                                if (checked) {
+                                    setYubikey({ slot: 2 });
+                                }
+                            }}
+                        />
+                    </div>
+                    <hr />
                     <h3>{t('settings:reset')}</h3>
                     <Trans i18nKey="walletResetConfirmation:warning">
                         <p>
@@ -299,6 +327,7 @@ const mapDispatchToProps = {
     setTray,
     setNotifications,
     setProxy,
+    setYubikey,
 };
 
 export default connect(mapStateToProps, mapDispatchToProps)(withI18n()(Advanced));

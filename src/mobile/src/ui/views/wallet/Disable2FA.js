@@ -5,7 +5,7 @@ import PropTypes from 'prop-types';
 import authenticator from 'authenticator';
 import { StyleSheet, View, Text, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { Navigation } from 'react-native-navigation';
-import { resetWallet, set2FAStatus } from 'shared-modules/actions/settings';
+import { resetWallet, set2FAStatusOtp } from 'shared-modules/actions/settings';
 import { generateAlert } from 'shared-modules/actions/alerts';
 import { getTwoFactorAuthKeyFromKeychain } from 'libs/keychain';
 import WithBackPressGoToHome from 'ui/components/BackPressGoToHome';
@@ -59,7 +59,7 @@ class Disable2FA extends Component {
         /** @ignore */
         t: PropTypes.func.isRequired,
         /** @ignore */
-        set2FAStatus: PropTypes.func.isRequired,
+        set2FAStatusOtp: PropTypes.func.isRequired,
         /** @ignore */
         password: PropTypes.object.isRequired,
     };
@@ -85,7 +85,7 @@ class Disable2FA extends Component {
             .then((key) => {
                 const verified = authenticator.verifyToken(key, this.state.token);
                 if (verified) {
-                    this.props.set2FAStatus(false);
+                    this.props.set2FAStatusOtp(false);
                     this.goBack();
                     this.timeout = setTimeout(() => {
                         this.props.generateAlert(
@@ -160,7 +160,7 @@ const mapStateToProps = (state) => ({
 const mapDispatchToProps = {
     resetWallet,
     generateAlert,
-    set2FAStatus,
+    set2FAStatusOtp,
 };
 
 export default WithBackPressGoToHome()(

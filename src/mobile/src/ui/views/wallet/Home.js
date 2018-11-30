@@ -28,6 +28,7 @@ import TabContent from 'ui/components/TabContent';
 import EnterPassword from 'ui/components/EnterPassword';
 import { height } from 'libs/dimensions';
 import { isAndroid, isIPhoneX } from 'libs/device';
+import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
 
 const styles = StyleSheet.create({
     midContainer: {
@@ -94,10 +95,18 @@ class Home extends Component {
         markTaskAsDone: PropTypes.func.isRequired,
         /** Currently selected account name */
         selectedAccountName: PropTypes.string.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
     };
 
     constructor(props) {
         super(props);
+
+        applyYubikeyMixinMobile(this, props.yubikeySettings);
+
         this.onLoginPress = this.onLoginPress.bind(this);
         this.setDeepUrl = this.setDeepUrl.bind(this);
         this.viewFlex = new Animated.Value(0.7);
@@ -159,12 +168,31 @@ class Home extends Component {
      * @param {string} password
      * @returns {Promise<void>}
      */
-    async onLoginPress(password) {
+    async onLoginPress(password, yubikeyHashedPassword = null) {
         const { t, storedPasswordHash } = this.props;
-        if (!password) {
+        if (!password && !yubikeyHashedPassword) {
             return this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
         }
-        const passwordHash = await hash(password);
+
+        //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
+        this._password = password;
+        if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
+            return;
+        }
+        this._password = null;
+
+        let passwordHash = null;
+
+        if (yubikeyHashedPassword !== null) {
+            passwordHash = yubikeyHashedPassword;
+        } else {
+            try {
+                passwordHash = await hash(password);
+            } catch (err) {
+                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            }
+        }
+
         if (!isEqual(passwordHash, storedPasswordHash)) {
             this.props.generateAlert(
                 'error',
@@ -205,6 +233,37 @@ class Home extends Component {
             this.props.changeHomeScreenRoute('send');
         } else {
             generateAlert('error', t('send:invalidAddress'), t('send:invalidAddressExplanation1'));
+        }
+    }
+
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings } = this.props;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(this._password);
+            this._password = null;
+        } catch (err) {
+            //console.error(err);
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.onLoginPress(null, pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
         }
     }
 
@@ -328,76 +387,86 @@ class Home extends Component {
                     this.userInactivity = c;
                 }}
                 timeForInactivity={300000}
-                checkInterval={3000}
+                checkInterval={2000}
                 onInactivity={this.handleInactivity}
             >
                 <View style={{ flex: 1, backgroundColor: body.bg }}>
-                    {(!inactive && (
-                        <View style={{ flex: 1 }}>
-                            {(!minimised && (
-                                <KeyboardAvoidingView style={styles.midContainer} behavior="padding">
-                                    <Animated.View useNativeDriver style={{ flex: this.viewFlex }} />
-                                    <View style={{ flex: 4.72 }}>
-                                        <TabContent
-                                            onTabSwitch={(name) => this.onTabSwitch(name)}
-                                            handleCloseTopBar={() => this.handleCloseTopBar()}
-                                            isKeyboardActive={isKeyboardActive}
+                    {this.renderYubikey()}
+
+                    {!inactive &&
+                        this.isYubikeyIdle() && (
+                            <View style={{ flex: 1 }}>
+                                {(!minimised && (
+                                    <KeyboardAvoidingView style={styles.midContainer} behavior="padding">
+                                        <Animated.View useNativeDriver style={{ flex: this.viewFlex }} />
+                                        <View style={{ flex: 4.72 }}>
+                                            <TabContent
+                                                onTabSwitch={(name) => this.onTabSwitch(name)}
+                                                handleCloseTopBar={() => this.handleCloseTopBar()}
+                                                isKeyboardActive={isKeyboardActive}
+                                            />
+                                        </View>
+                                    </KeyboardAvoidingView>
+                                )) || <View style={styles.midContainer} />}
+                                <View style={styles.bottomContainer}>
+                                    <Tabs onPress={(name) => this.onTabSwitch(name)} theme={theme}>
+                                        <Tab
+                                            name="balance"
+                                            icon="wallet"
+                                            theme={theme}
+                                            text={t('home:balance').toUpperCase()}
                                         />
-                                    </View>
-                                </KeyboardAvoidingView>
-                            )) || <View style={styles.midContainer} />}
-                            <View style={styles.bottomContainer}>
-                                <Tabs onPress={(name) => this.onTabSwitch(name)} theme={theme}>
-                                    <Tab
-                                        name="balance"
-                                        icon="wallet"
-                                        theme={theme}
-                                        text={t('home:balance').toUpperCase()}
-                                    />
-                                    <Tab name="send" icon="send" theme={theme} text={t('home:send').toUpperCase()} />
-                                    <Tab
-                                        name="receive"
-                                        icon="receive"
-                                        theme={theme}
-                                        text={t('home:receive').toUpperCase()}
-                                    />
-                                    <Tab
-                                        name="history"
-                                        icon="history"
-                                        theme={theme}
-                                        text={t('home:history').toUpperCase()}
-                                    />
-                                    <Tab
-                                        name="settings"
-                                        icon="settings"
-                                        theme={theme}
-                                        text={t('home:settings').toUpperCase()}
-                                    />
-                                </Tabs>
+                                        <Tab
+                                            name="send"
+                                            icon="send"
+                                            theme={theme}
+                                            text={t('home:send').toUpperCase()}
+                                        />
+                                        <Tab
+                                            name="receive"
+                                            icon="receive"
+                                            theme={theme}
+                                            text={t('home:receive').toUpperCase()}
+                                        />
+                                        <Tab
+                                            name="history"
+                                            icon="history"
+                                            theme={theme}
+                                            text={t('home:history').toUpperCase()}
+                                        />
+                                        <Tab
+                                            name="settings"
+                                            icon="settings"
+                                            theme={theme}
+                                            text={t('home:settings').toUpperCase()}
+                                        />
+                                    </Tabs>
+                                </View>
+                                <TopBar
+                                    minimised={minimised}
+                                    isKeyboardActive={isKeyboardActive}
+                                    topBarHeight={this.topBarHeight}
+                                />
                             </View>
-                            <TopBar
-                                minimised={minimised}
-                                isKeyboardActive={isKeyboardActive}
-                                topBarHeight={this.topBarHeight}
-                            />
-                        </View>
-                    )) || (
-                        <View style={[styles.inactivityLogoutContainer, { backgroundColor: body.bg }]}>
-                            <EnterPassword
-                                onLoginPress={this.onLoginPress}
-                                backgroundColor={body.bg}
-                                negativeColor={negative.color}
-                                positiveColor={positive.color}
-                                bodyColor={body.color}
-                                textColor={textColor}
-                                setUserActive={() => this.props.setUserActivity({ inactive: false })}
-                                generateAlert={(error, title, explanation) =>
-                                    this.props.generateAlert(error, title, explanation)
-                                }
-                                isFingerprintEnabled={isFingerprintEnabled}
-                            />
-                        </View>
-                    )}
+                        )}
+                    {inactive &&
+                        this.isYubikeyIdle() && (
+                            <View style={[styles.inactivityLogoutContainer, { backgroundColor: body.bg }]}>
+                                <EnterPassword
+                                    onLoginPress={this.onLoginPress}
+                                    backgroundColor={body.bg}
+                                    negativeColor={negative.color}
+                                    positiveColor={positive.color}
+                                    bodyColor={body.color}
+                                    textColor={textColor}
+                                    setUserActive={() => this.props.setUserActivity({ inactive: false })}
+                                    generateAlert={(error, title, explanation) =>
+                                        this.props.generateAlert(error, title, explanation)
+                                    }
+                                    isFingerprintEnabled={isFingerprintEnabled}
+                                />
+                            </View>
+                        )}
                     <PollComponent />
                 </View>
             </UserInactivity>
@@ -421,6 +490,8 @@ const mapStateToProps = (state) => ({
     shouldTransitionForSnapshot: shouldTransitionForSnapshot(state),
     hasDisplayedSnapshotTransitionGuide: hasDisplayedSnapshotTransitionGuide(state),
     selectedAccountName: getSelectedAccountName(state),
+    yubikeySettings: state.settings.yubikey,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
 });
 
 const mapDispatchToProps = {

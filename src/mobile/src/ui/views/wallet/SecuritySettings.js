@@ -26,6 +26,8 @@ class SecuritySettings extends Component {
         /** @ignore */
         is2FAEnabled: PropTypes.bool.isRequired,
         /** @ignore */
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
         isFingerprintEnabled: PropTypes.bool.isRequired,
     };
 
@@ -38,10 +40,10 @@ class SecuritySettings extends Component {
      * @method on2FASetupPress
      */
     on2FASetupPress() {
-        const { is2FAEnabled, theme: { body } } = this.props;
+        const { is2FAEnabled, is2FAEnabledYubikey, theme: { body } } = this.props;
         Navigation.push('appStack', {
             component: {
-                name: is2FAEnabled ? 'disable2FA' : 'twoFactorSetupAddKey',
+                name: is2FAEnabled ? 'disable2FA' : is2FAEnabledYubikey ? 'twoFASetupYubikey' : 'twoFASetupChooser',
                 options: {
                     animations: {
                         push: {
@@ -106,7 +108,7 @@ class SecuritySettings extends Component {
     }
 
     renderSettingsContent() {
-        const { theme, t, is2FAEnabled, isFingerprintEnabled } = this.props;
+        const { theme, t, is2FAEnabled, is2FAEnabledYubikey, isFingerprintEnabled } = this.props;
         const rows = [
             { name: t('changePassword'), icon: 'password', function: () => this.props.setSetting('changePassword') },
             { name: 'separator' },
@@ -114,7 +116,9 @@ class SecuritySettings extends Component {
                 name: t('twoFA'),
                 icon: 'twoFA',
                 function: () => this.on2FASetupPress(),
-                currentSetting: is2FAEnabled ? t('enabled') : t('disabled'),
+                currentSetting: is2FAEnabled
+                    ? t('twoFA:twoFaMethod_otp')
+                    : is2FAEnabledYubikey ? t('twoFA:twoFaMethod_yubikey') : t('disabled'),
             },
             {
                 name: t('fingerprint'),
@@ -135,6 +139,7 @@ class SecuritySettings extends Component {
 const mapStateToProps = (state) => ({
     theme: state.settings.theme,
     is2FAEnabled: state.settings.is2FAEnabled,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
     isFingerprintEnabled: state.settings.isFingerprintEnabled,
 });
 

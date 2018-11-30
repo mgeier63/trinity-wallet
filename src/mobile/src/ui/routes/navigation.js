@@ -20,6 +20,8 @@ import WalletResetRequirePassword from 'ui/views/wallet/WalletResetRequirePasswo
 import OnboardingComplete from 'ui/views/onboarding/OnboardingComplete';
 import SetAccountNameComponent from 'ui/views/onboarding/SetAccountName';
 import SeedReentry from 'ui/views/onboarding/SeedReentry';
+import TwoFactorSetupChooseMethodComponent from 'ui/views/wallet/TwoFactorSetupChooseMethod';
+import TwoFactorSetupYubikeyComponent from 'ui/views/wallet/TwoFactorSetupYubikey';
 import TwoFactorSetupAddKeyComponent from 'ui/views/wallet/TwoFactorSetupAddKey';
 import TwoFactorSetupEnterToken from 'ui/views/wallet/TwoFactorSetupEnterToken';
 import Disable2FA from 'ui/views/wallet/Disable2FA';
@@ -67,6 +69,18 @@ export default function registerScreens(store, Provider) {
     Navigation.registerComponentWithRedux(
         'saveSeedConfirmation',
         () => applyHOCs(SaveSeedConfirmation),
+        Provider,
+        store,
+    );
+    Navigation.registerComponentWithRedux(
+        'twoFASetupChooser',
+        () => applyHOCs(TwoFactorSetupChooseMethodComponent),
+        Provider,
+        store,
+    );
+    Navigation.registerComponentWithRedux(
+        'twoFASetupYubikey',
+        () => applyHOCs(TwoFactorSetupYubikeyComponent),
         Provider,
         store,
     );

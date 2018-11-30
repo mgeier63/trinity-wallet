@@ -111,13 +111,26 @@ const initialState = {
      */
     versions: {},
     /**
-     * Determines if user has enabled two factor authentication on the wallet
+     * Determines if user has enabled two factor OTP based authentication on the wallet
      */
     is2FAEnabled: false,
     /**
-     * Determines if user has enabled finger print authentication
+     * Determines if user has enabled two factor YubiKey based authentication on the wallet
+     * NOTE: This and *is2FAEnabled* are mutually exclusive, they can not be enabled at the same time.
+     * NOTE: This shold be refactored into a single tri-state like (enum based) setting,
+     * NOTE: but that would require a settings-database migration!
      */
-    isFingerprintEnabled: false,
+    is2FAEnabledYubikey: false,
+    /**
+     * Determines yubikey specific settings
+     */
+    yubikey: {
+        slot: 2,
+        androidReaderMode: true,
+    },
+    /**
+     * Determines if user has enabled finger print authentication
+     */ isFingerprintEnabled: false,
     /**
      * Keeps track if user has accepted terms and conditions during the initial setup
      */
@@ -243,10 +256,17 @@ const settingsReducer = (state = initialState, action) => {
                 node: action.payload,
                 hasRandomizedNode: true,
             };
-        case ActionTypes.SET_2FA_STATUS:
+        case ActionTypes.SET_2FA_STATUS_OTP:
             return {
                 ...state,
                 is2FAEnabled: action.payload,
+                is2FAEnabledYubikey: action.payload ? false : state.is2FAEnabledYubikey,
+            };
+        case ActionTypes.SET_2FA_STATUS_YUBIKEY:
+            return {
+                ...state,
+                is2FAEnabledYubikey: action.payload,
+                is2FAEnabled: action.payload ? false : state.is2FAEnabled,
             };
         case ActionTypes.SET_FINGERPRINT_STATUS:
             return {
@@ -305,6 +325,15 @@ const settingsReducer = (state = initialState, action) => {
             return {
                 ...state,
                 ignoreProxy: action.payload,
+            };
+        case ActionTypes.SET_YUBIKEY:
+            return {
+                ...state,
+                yubikey: {
+                    ...state.yubikey,
+                    slot: action.payload.slot,
+                    androidReaderMode: action.payload.androidReaderMode,
+                },
             };
     }
 

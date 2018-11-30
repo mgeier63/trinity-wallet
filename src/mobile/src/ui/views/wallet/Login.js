@@ -18,6 +18,7 @@ import EnterPasswordOnLoginComponent from 'ui/components/EnterPasswordOnLogin';
 import Enter2FAComponent from 'ui/components/Enter2FA';
 import { authorize, getTwoFactorAuthKeyFromKeychain, hash } from 'libs/keychain';
 import { isAndroid } from 'libs/device';
+import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
 
 const styles = StyleSheet.create({
     container: {
@@ -41,6 +42,11 @@ class Login extends Component {
         /** @ignore */
         is2FAEnabled: PropTypes.bool.isRequired,
         /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
+        /** @ignore */
         setUserActivity: PropTypes.func.isRequired,
         /** @ignore */
         setLoginPasswordField: PropTypes.func.isRequired,
@@ -62,12 +68,14 @@ class Login extends Component {
         forceUpdate: PropTypes.bool.isRequired,
     };
 
-    constructor() {
-        super();
+    constructor(props) {
+        super(props);
 
         this.onComplete2FA = this.onComplete2FA.bind(this);
         this.onLoginPress = this.onLoginPress.bind(this);
         this.setDeepUrl = this.setDeepUrl.bind(this);
+
+        applyYubikeyMixinMobile(this, props.yubikeySettings);
     }
 
     componentWillMount() {
@@ -92,20 +100,36 @@ class Login extends Component {
      * @method onLoginPress
      * @returns {Promise<void>}
      */
-    async onLoginPress() {
+    async onLoginPress(unused, yubikeyHashedPassword = null) {
         const { t, is2FAEnabled, hasConnection, password, forceUpdate } = this.props;
         if (!hasConnection || forceUpdate) {
             return;
         }
+
         if (!password) {
             this.props.generateAlert('error', t('emptyPassword'), t('emptyPasswordExplanation'));
         } else {
-            const pwdHash = await hash(password);
+            //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
+            if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
+                return;
+            }
+
+            let passwordHash = null;
+
+            if (yubikeyHashedPassword !== null) {
+                passwordHash = yubikeyHashedPassword;
+            } else {
+                try {
+                    passwordHash = await hash(password);
+                } catch (err) {
+                    generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+                }
+            }
 
             try {
-                await authorize(pwdHash);
+                await authorize(passwordHash);
 
-                this.props.setPassword(pwdHash);
+                this.props.setPassword(passwordHash);
                 this.props.setLoginPasswordField('');
                 if (!is2FAEnabled) {
                     this.navigateToLoading();
@@ -200,29 +224,65 @@ class Login extends Component {
         });
     }
 
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings, password } = this.props;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(password);
+        } catch (err) {
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.onLoginPress(null, pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
+    }
+
     render() {
         const { theme, password, loginRoute, isFingerprintEnabled } = this.props;
         const body = theme.body;
+
         return (
             <View style={[styles.container, { backgroundColor: body.bg }]}>
-                {loginRoute === 'login' && (
-                    <EnterPasswordOnLoginComponent
-                        theme={theme}
-                        onLoginPress={this.onLoginPress}
-                        navigateToNodeOptions={() => this.props.setLoginRoute('nodeOptions')}
-                        setLoginPasswordField={(pword) => this.props.setLoginPasswordField(pword)}
-                        password={password}
-                        isFingerprintEnabled={isFingerprintEnabled}
-                    />
-                )}
-                {loginRoute === 'complete2FA' && (
-                    <Enter2FAComponent
-                        verify={this.onComplete2FA}
-                        cancel={() => this.props.setLoginRoute('login')}
-                        theme={theme}
-                    />
-                )}
-                {loginRoute !== 'complete2FA' && loginRoute !== 'login' && <NodeOptionsOnLogin />}
+                {this.renderYubikey()}
+
+                {loginRoute === 'login' &&
+                    this.isYubikeyIdle() && (
+                        <EnterPasswordOnLoginComponent
+                            theme={theme}
+                            onLoginPress={this.onLoginPress}
+                            navigateToNodeOptions={() => this.props.setLoginRoute('nodeOptions')}
+                            setLoginPasswordField={(pword) => this.props.setLoginPasswordField(pword)}
+                            password={password}
+                            isFingerprintEnabled={isFingerprintEnabled}
+                        />
+                    )}
+                {loginRoute === 'complete2FA' &&
+                    this.isYubikeyIdle() && (
+                        <Enter2FAComponent
+                            verify={this.onComplete2FA}
+                            cancel={() => this.props.setLoginRoute('login')}
+                            theme={theme}
+                        />
+                    )}
+                {loginRoute !== 'complete2FA' &&
+                    loginRoute !== 'login' &&
+                    this.isYubikeyIdle() && <NodeOptionsOnLogin />}
             </View>
         );
     }
@@ -233,6 +293,8 @@ const mapStateToProps = (state) => ({
     nodes: state.settings.nodes,
     theme: state.settings.theme,
     is2FAEnabled: state.settings.is2FAEnabled,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
     accountInfo: state.accounts.accountInfo,
     password: state.ui.loginPasswordFieldText,
     pwdHash: state.wallet.password,

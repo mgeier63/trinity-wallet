@@ -20,6 +20,7 @@ import CtaButton from 'ui/components/CtaButton';
 import InfoBox from 'ui/components/InfoBox';
 import { isAndroid } from 'libs/device';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
+import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
 
 const styles = StyleSheet.create({
     container: {
@@ -126,10 +127,15 @@ class ViewSeed extends Component {
         setSetting: PropTypes.func.isRequired,
         /** @ignore */
         generateAlert: PropTypes.func.isRequired,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    constructor() {
-        super();
+    constructor(props) {
+        super(props);
 
         this.state = {
             password: '',
@@ -142,6 +148,8 @@ class ViewSeed extends Component {
         this.handleAppStateChange = this.handleAppStateChange.bind(this);
         this.hideSeed = this.hideSeed.bind(this);
         this.viewSeed = this.viewSeed.bind(this);
+
+        applyYubikeyMixinMobile(this, props.yubikeySettings);
     }
 
     componentDidMount() {
@@ -162,15 +170,69 @@ class ViewSeed extends Component {
         }
     }
 
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings } = this.props;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(this._password);
+        } catch (err) {
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        } finally {
+            this._password = null;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.viewSeed(pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
+    }
+
     /**
      * Gets seed from keychain if correct password is provided
      *
      * @method viewSeed
      * @returns {Promise<void>}
      */
-    async viewSeed() {
+    async viewSeed(yubikeyHashedPassword = null) {
         const { password, selectedAccountName, selectedAccountMeta, t } = this.props;
-        const pwdHash = await hash(this.state.password);
+
+        if (yubikeyHashedPassword === null && (!this.state.password || this.state.password.length === 0)) {
+            this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
+            return;
+        }
+
+        this._password = this.state.password; //need to keep password in local variable as the USB permission dialog
+        //can possible put out app in background and this the password gets cleared by "hideSeed"
+        if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
+            return;
+        }
+        this._password = null;
+
+        let pwdHash = null;
+
+        if (yubikeyHashedPassword !== null) {
+            pwdHash = yubikeyHashedPassword;
+        } else {
+            try {
+                pwdHash = await hash(this.state.password);
+            } catch (err) {
+                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            }
+        }
 
         if (isEqual(password, pwdHash)) {
             const seedStore = new SeedStore[selectedAccountMeta.type](pwdHash, selectedAccountName);
@@ -221,7 +283,13 @@ class ViewSeed extends Component {
         const textColor = { color: theme.body.color };
         const borderColor = { borderColor: theme.body.color };
         const { isConfirming } = this.state;
-
+        if (!this.isYubikeyIdle()) {
+            return (
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <View style={styles.container}>{this.renderYubikey()}</View>
+                </TouchableWithoutFeedback>
+            );
+        }
         return (
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.container}>
@@ -358,6 +426,8 @@ const mapStateToProps = (state) => ({
     selectedAccountName: getSelectedAccountName(state),
     selectedAccountMeta: getSelectedAccountMeta(state),
     theme: state.settings.theme,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

@@ -8,6 +8,7 @@ import { setSetting } from 'shared-modules/actions/wallet';
 import { generateAlert } from 'shared-modules/actions/alerts';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 import { renderSettingsRows } from 'ui/components/SettingsContent';
+import { isYubikeyBackendImplemented } from 'libs/nativeModules';
 
 const styles = StyleSheet.create({
     container: {
@@ -151,6 +152,18 @@ export class AdvancedSettings extends PureComponent {
                 function: () => this.props.setSetting('autoPromotion'),
                 currentSetting: autoPromotion ? t('enabled') : t('disabled'),
             },
+        ];
+        if (isYubikeyBackendImplemented) {
+            rows.push(
+                { name: 'separator' },
+                {
+                    name: t('yubikey:yubikeySettings'),
+                    icon: 'twoFA',
+                    function: () => this.props.setSetting('yubikeySettings'),
+                },
+            );
+        }
+        rows.push(
             { name: 'separator' },
             {
                 name: t('snapshotTransition'),
@@ -161,7 +174,7 @@ export class AdvancedSettings extends PureComponent {
             { name: 'separator' },
             { name: t('settings:reset'), icon: 'trash', function: this.reset },
             { name: 'back', function: () => this.props.setSetting('mainSettings') },
-        ];
+        );
         return renderSettingsRows(rows, theme);
     }
 
@@ -176,6 +189,7 @@ const mapStateToProps = (state) => ({
     autoPromotion: state.settings.autoPromotion,
     remotePoW: state.settings.remotePoW,
     isSendingTransfer: state.ui.isSendingTransfer,
+    yubikey: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

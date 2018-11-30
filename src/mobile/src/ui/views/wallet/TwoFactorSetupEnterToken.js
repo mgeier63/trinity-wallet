@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import authenticator from 'authenticator';
-import { set2FAStatus } from 'shared-modules/actions/settings';
+import { set2FAStatusOtp } from 'shared-modules/actions/settings';
 import { generateAlert } from 'shared-modules/actions/alerts';
 import { connect } from 'react-redux';
 import { Navigation } from 'react-native-navigation';
@@ -58,7 +58,7 @@ class TwoFactorSetupEnterToken extends Component {
         /** @ignore */
         generateAlert: PropTypes.func.isRequired,
         /** @ignore */
-        set2FAStatus: PropTypes.func.isRequired,
+        set2FAStatusOtp: PropTypes.func.isRequired,
         /** @ignore */
         t: PropTypes.func.isRequired,
         /** @ignore */
@@ -146,12 +146,12 @@ class TwoFactorSetupEnterToken extends Component {
             const verified = authenticator.verifyToken(key, this.state.code);
 
             if (verified) {
-                this.props.set2FAStatus(true);
-                this.navigateToHome();
-
-                this.timeout = setTimeout(() => {
-                    this.props.generateAlert('success', t('twoFAEnabled'), t('twoFAEnabledExplanation'));
-                }, 300);
+                this.props.set2FAStatusOtp(true);
+                this.navigateToHome().then(
+                    (this.timeout = setTimeout(() => {
+                        this.props.generateAlert('success', t('twoFAEnabled'), t('twoFAEnabledExplanation'));
+                    }, 500)),
+                );
             } else {
                 this.props.generateAlert('error', t('wrongCode'), t('wrongCodeExplanation'));
             }
@@ -199,7 +199,7 @@ class TwoFactorSetupEnterToken extends Component {
     }
 }
 const mapDispatchToProps = {
-    set2FAStatus,
+    set2FAStatusOtp,
     generateAlert,
 };
 

@@ -23,6 +23,8 @@ import Button from 'ui/components/Button';
 import Loading from 'ui/components/Loading';
 import Modal from 'ui/components/modal/Modal';
 
+import { applyYubikeyMixinDesktop } from 'libs/yubikey/YubikeyMixinDesktop';
+
 import css from './index.scss';
 
 /**
@@ -68,13 +70,21 @@ class Login extends React.Component {
         getFullAccountInfo: PropTypes.func.isRequired,
         /** @ignore */
         t: PropTypes.func.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    state = {
-        verifyTwoFA: false,
-        code: '',
-        password: '',
-    };
+    constructor(props) {
+        super(props);
+
+        this.state = {
+            verifyTwoFA: false,
+            code: '',
+            password: '',
+        };
+
+        applyYubikeyMixinDesktop(this, props.yubikeySettings);
+    }
 
     componentDidMount() {
         Electron.updateMenu('authorised', false);
@@ -146,12 +156,43 @@ class Login extends React.Component {
         }
     };
 
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings } = this.props;
+        const { password } = this.state;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(password);
+        } catch (err) {
+            //console.error(err);
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.handleSubmit(null, pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
+    }
+
     /**
      * Verify password and 2fa code, trigger account setup
      * @param {event} Event - Form submit event
      * @returns {undefined}
      */
-    handleSubmit = async (e) => {
+    handleSubmit = async (e, yubikeyHashedPassword = null) => {
         if (e) {
             e.preventDefault();
         }
@@ -159,13 +200,30 @@ class Login extends React.Component {
         const { password, code, verifyTwoFA } = this.state;
         const { setPassword, generateAlert, t } = this.props;
 
+        //Yubikey chokes on 0 bytes input for HMAC, but I think it's generally a good idea to check for empty passwords here
+        //rather than relying on "authorize" to fail
+        if (password.length === 0) {
+            //empty password
+            generateAlert('error', t('changePassword:emptyPassword'), t('changePassword:emptyPasswordExplanation'));
+            return;
+        }
+
+        //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
+        if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
+            return;
+        }
+
         let passwordHash = null;
         let authorised = false;
 
-        try {
-            passwordHash = await hash(password);
-        } catch (err) {
-            generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+        if (yubikeyHashedPassword !== null) {
+            passwordHash = yubikeyHashedPassword;
+        } else {
+            try {
+                passwordHash = await hash(password);
+            } catch (err) {
+                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            }
         }
 
         try {
@@ -278,7 +336,9 @@ const mapStateToProps = (state) => ({
     ui: state.ui,
     currency: state.settings.currency,
     onboarding: state.ui.onboarding,
-    forceUpdate: state.wallet.forceUpdate
+    forceUpdate: state.wallet.forceUpdate,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

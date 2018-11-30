@@ -19,6 +19,7 @@ import { Styling } from 'ui/theme/general';
 import { Icon } from 'ui/theme/icons';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 import InfoBox from 'ui/components/InfoBox';
+import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
 
 const styles = StyleSheet.create({
     container: {
@@ -113,15 +114,22 @@ class DeleteAccount extends Component {
         generateAlert: PropTypes.func.isRequired,
         /** @ignore */
         toggleModalActivity: PropTypes.func.isRequired,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    constructor() {
-        super();
+    constructor(props) {
+        super(props);
 
         this.state = {
             pressedContinue: false,
             password: '',
         };
+
+        applyYubikeyMixinMobile(this, props.yubikeySettings);
     }
 
     componentDidMount() {
@@ -147,12 +155,33 @@ class DeleteAccount extends Component {
      *
      * @method onContinuePress
      */
-    async onContinuePress() {
+    async onContinuePress(yubikeyHashedPassword = null) {
         const { password, t } = this.props;
         if (!this.state.pressedContinue) {
             return this.setState({ pressedContinue: true });
         }
-        const pwdHash = await hash(this.state.password);
+
+        if (!this.state.password || this.state.password.length === 0) {
+            this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
+            return;
+        }
+
+        //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
+        if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
+            return;
+        }
+
+        let pwdHash = null;
+
+        if (yubikeyHashedPassword !== null) {
+            pwdHash = yubikeyHashedPassword;
+        } else {
+            try {
+                pwdHash = await hash(this.state.password);
+            } catch (err) {
+                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            }
+        }
 
         if (isEqual(password, pwdHash)) {
             return this.showModal();
@@ -185,6 +214,36 @@ class DeleteAccount extends Component {
      */
     onNoPress() {
         this.hideModal();
+    }
+
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings } = this.props;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(this.state.password);
+        } catch (err) {
+            //console.error(err);
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.onContinuePress(pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
     }
 
     /**
@@ -221,6 +280,13 @@ class DeleteAccount extends Component {
         const textColor = { color: theme.body.color };
         const bodyColor = theme.body.color;
 
+        if (!this.isYubikeyIdle()) {
+            return (
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <View style={styles.container}>{this.renderYubikey()}</View>
+                </TouchableWithoutFeedback>
+            );
+        }
         return (
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.container}>
@@ -302,6 +368,9 @@ const mapStateToProps = (state) => ({
     selectedAccountName: getSelectedAccountName(state),
     selectedAccountMeta: getSelectedAccountMeta(state),
     shouldPreventAction: shouldPreventAction(state),
+    is2FAEnabled: state.settings.is2FAEnabled,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

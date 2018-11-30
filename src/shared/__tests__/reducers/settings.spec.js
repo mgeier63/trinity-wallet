@@ -60,6 +60,11 @@ describe('Reducer: settings', () => {
                 lockScreenTimeout: 3,
                 versions: {},
                 is2FAEnabled: false,
+                is2FAEnabledYubikey: false,
+                yubikey: {
+                    slot: 2,
+                    androidReaderMode: true,
+                },
                 isFingerprintEnabled: false,
                 acceptedTerms: false,
                 acceptedPrivacy: false,
@@ -321,17 +326,72 @@ describe('Reducer: settings', () => {
         });
     });
 
-    describe('SET_2FA_STATUS', () => {
-        it('should set is2FAEnabled to payload', () => {
+    describe('SET_2FA_STATUS_OTP', () => {
+        it('should set is2FAEnabled to true and reset is2FAEnabledYubikey', () => {
             const initialState = {
                 is2FAEnabled: false,
+                is2FAEnabledYubikey: true,
             };
 
-            const action = actions.set2FAStatus(true);
+            const action = actions.set2FAStatusOtp(true);
 
             const newState = reducer(initialState, action);
             const expectedState = {
                 is2FAEnabled: true,
+                is2FAEnabledYubikey: false,
+            };
+
+            expect(newState).to.eql(expectedState);
+        });
+
+        it('should set is2FAEnabled to false and reset is2FAEnabledYubikey', () => {
+            const initialState = {
+                is2FAEnabled: true,
+                is2FAEnabledYubikey: false,
+            };
+
+            const action = actions.set2FAStatusOtp(false);
+
+            const newState = reducer(initialState, action);
+            const expectedState = {
+                is2FAEnabled: false,
+                is2FAEnabledYubikey: false,
+            };
+
+            expect(newState).to.eql(expectedState);
+        });
+    });
+
+    describe('SET_2FA_STATUS_YUBIKEY', () => {
+        it('should set is2FAEnabledYubikey to true and reset is2FAEnabled', () => {
+            const initialState = {
+                is2FAEnabled: true,
+                is2FAEnabledYubikey: false,
+            };
+
+            const action = actions.set2FAStatusYubikey(true);
+
+            const newState = reducer(initialState, action);
+            const expectedState = {
+                is2FAEnabled: false,
+                is2FAEnabledYubikey: true,
+            };
+
+            expect(newState).to.eql(expectedState);
+        });
+
+        it('should set is2FAEnabledYubikey to false and reset is2FAEnabled', () => {
+            const initialState = {
+                is2FAEnabled: false,
+                is2FAEnabledYubikey: true,
+            };
+
+            const action = actions.set2FAStatusYubikey(false);
+
+            const newState = reducer(initialState, action);
+            const expectedState = {
+                is2FAEnabled: false,
+                is2FAEnabledYubikey: false,
             };
 
             expect(newState).to.eql(expectedState);
@@ -427,6 +487,48 @@ describe('Reducer: settings', () => {
                 ignoreProxy: true,
             };
 
+            expect(newState).to.eql(expectedState);
+        });
+    });
+
+    describe('SET_YUBIKEY', () => {
+        it('should set yubikey (settings) slot ', () => {
+            const initialState = {
+                yubikey: {
+                    slot: 2,
+                    androidReaderMode: true,
+                },
+            };
+
+            const action = actions.setYubikey({ slot: 1, androidReaderMode: true });
+
+            const newState = reducer(initialState, action);
+            const expectedState = {
+                yubikey: {
+                    slot: 1,
+                    androidReaderMode: true,
+                },
+            };
+            expect(newState).to.eql(expectedState);
+        });
+
+        it('should set yubikey (settings) androidReaderMode ', () => {
+            const initialState = {
+                yubikey: {
+                    slot: 2,
+                    androidReaderMode: true,
+                },
+            };
+
+            const action = actions.setYubikey({ slot: 2, androidReaderMode: false });
+
+            const newState = reducer(initialState, action);
+            const expectedState = {
+                yubikey: {
+                    slot: 2,
+                    androidReaderMode: false,
+                },
+            };
             expect(newState).to.eql(expectedState);
         });
     });

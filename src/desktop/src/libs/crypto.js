@@ -1,5 +1,6 @@
 /* global Electron */
 import { MAX_SEED_LENGTH } from 'libs/iota/utils';
+import SeedStore from 'libs/SeedStore';
 
 export const ACC_MAIN = 'Trinity';
 // Maximum allowed account title
@@ -95,12 +96,12 @@ export const decrypt = async (cipherText, hash) => {
 };
 
 /**
- * Set Two-Factor authentication key
+ * Set Two-Factor OTP authentication key
  * @param {string} Password - Plain text password for decryption
  * @param {string} Key - Two-factor authentication key
  * @returns {boolean} Two-Factor key set success state
  */
-export const setTwoFA = async (password, key) => {
+export const setTwoFAOtp = async (password, key) => {
     try {
         const vault = await Electron.readKeychain(ACC_MAIN);
         const decryptedVault = vault === null ? {} : await decrypt(vault, password);
@@ -122,6 +123,25 @@ export const setTwoFA = async (password, key) => {
 };
 
 /**
+ * Set Two-Factor Yubikey protection state
+ * @param {string} Password - Plain text password for decryption
+ * @param {string} Key - Two-factor authentication key
+ * @returns {boolean} Two-Factor key set success state
+ */
+export const enableYubikey2FA = async (accountType, passwordCurrentHash, passwordNewHash, enabled) => {
+    try {
+        await SeedStore[accountType.type].updatePassword(passwordCurrentHash, passwordNewHash);
+        if (enabled) {
+            //this shouldn't be necessary as the UI should only allow to enable one of OTP or YubiKey methods at a time, but let's play safe
+            setTwoFAOtp(passwordNewHash, null);
+        }
+        return true;
+    } catch (err) {
+        throw err;
+    }
+};
+
+/**
  * Set and store random salt to keychain
  */
 export const initKeychain = async () => {
@@ -134,7 +154,7 @@ export const initKeychain = async () => {
 /**
  * Check for valid vault key
  * @param {array} Key - Account decryption key
- * @returns {boolean | string} - Returns a Two-Factor authentication code or boolean of none set
+ * @returns {boolean | string} - Returns a Two-Factor OTP authentication code or boolean of none set
  */
 export const authorize = async (key) => {
     const vault = await Electron.readKeychain(ACC_MAIN);
@@ -194,6 +214,20 @@ export const hash = async (inputPlain) => {
         return false;
     }
 
+    const input = new TextEncoder().encode(inputPlain);
+
+    return await hashBytes(input);
+};
+
+/**
+ * Hash Uint8Array using Argon2
+ * @param {string} Password - Plain text to hash
+ * @returns {string} Argon2 raw hash
+ */
+export const hashBytes = async (input) => {
+    if (!(input instanceof Uint8Array) || input.length < 1) {
+        return false;
+    }
     const saltHex = await Electron.readKeychain(`${ACC_MAIN}-salt`);
 
     if (!saltHex) {
@@ -202,8 +236,6 @@ export const hash = async (inputPlain) => {
 
     const saltArray = saltHex.split(',');
     const salt = Uint8Array.from(saltArray);
-
-    const input = new TextEncoder().encode(inputPlain);
 
     const hash = await Electron.argon2(input, salt);
 

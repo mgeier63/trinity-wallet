@@ -14,6 +14,7 @@ const Entangled = require('../Entangled');
 const { byteToTrit, byteToChar, removeNonAlphaNumeric } = require('../../src/libs/helpers');
 const ledger = require('../hardware/Ledger');
 const { version } = require('../../package.json');
+const yubikeyUsbBackend = require('../hardware/YubikeyUsbBackend');
 
 const capitalize = (string) => {
     return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
@@ -577,6 +578,7 @@ const Electron = {
     _eventListeners: {},
 
     ledger,
+    yubikeyUsbBackend,
 };
 
 module.exports = Electron;

@@ -3,6 +3,7 @@ package org.iota.mobile;
 import java.util.HashMap;
 import java.util.Arrays;
 
+import com.facebook.common.util.Hex;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -74,6 +75,26 @@ public class Argon2Android extends ReactContextBaseJavaModule {
             }
 
             promise.resolve(Arrays.toString(intArray).replaceAll("\\[|\\]",""));
+        } catch(Argon2Exception error) {
+            promise.reject(error);
+        }
+    }
+
+    /**
+     * Gets argon2 hash
+     * @param password Password to hash, as hex encoded string
+     * @param salt salt, as hex encoded string
+     * @param options Supported options (t_cost, m_cost, parallelism, hashLength)
+     * @param promise
+     */
+    @ReactMethod
+    public void hashBytes(String password, String salt, ReadableMap options, Promise promise) {
+        try {
+            Argon2 instance = Argon2Android.init(options.toHashMap());
+            Argon2Result result = instance.argon2_hash_raw(Hex.decodeHex(password), Hex.decodeHex(salt));
+
+            byte[] res = result.getResult();
+            promise.resolve(Hex.encodeHex(res, false));
         } catch(Argon2Exception error) {
             promise.reject(error);
         }

@@ -16,6 +16,8 @@ import { hash } from 'libs/crypto';
 import Password from 'ui/components/input/Password';
 import Button from 'ui/components/Button';
 
+import { applyYubikeyMixinDesktop } from 'libs/yubikey/YubikeyMixinDesktop';
+
 /**
  * User account password change component
  */
@@ -29,20 +31,59 @@ class PasswordSettings extends PureComponent {
         generateAlert: PropTypes.func.isRequired,
         /** @ignore */
         t: PropTypes.func.isRequired,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    state = {
-        passwordCurrent: '',
-        passwordNew: '',
-        passwordConfirm: '',
-    };
+    constructor(props) {
+        super(props);
+
+        this.state = {
+            passwordCurrent: '',
+            passwordNew: '',
+            passwordConfirm: '',
+        };
+
+        applyYubikeyMixinDesktop(this, props.yubikeySettings);
+    }
+
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { passwordCurrent, passwordNew } = this.state;
+        const { t, yubikeySettings } = this.props;
+        try {
+            const passwordNewHash = await hash(passwordNew);
+            const passwordCurrentHash = await hash(passwordCurrent);
+
+            const aPwYubiHashedCurrent = await this.doChallengeResponseThenSaltedHash(passwordCurrentHash);
+            const aPwYubiHashedNew = await this.doChallengeResponseThenSaltedHash(passwordNewHash);
+
+            if (aPwYubiHashedCurrent !== null && aPwYubiHashedNew !== null) {
+                postResultDelayed(async () => {
+                    this.changePassword(null, aPwYubiHashedCurrent, aPwYubiHashedNew);
+                });
+                return;
+            }
+        } catch (err2) {
+            //console.error(err2);
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
+    }
 
     /**
      * Check for a valid password, update vault and state
      * @param {event} event - Form submit event
      */
-    changePassword = async (event) => {
-        event.preventDefault();
+    changePassword = async (event, yubiHashedPasswordCur = null, yubiHashedPasswordNew = null) => {
+        if (event) {
+            event.preventDefault();
+        }
 
         const { passwordCurrent, passwordNew, passwordConfirm } = this.state;
         const { accountMeta, setPassword, generateAlert, t } = this.props;
@@ -66,9 +107,14 @@ class PasswordSettings extends PureComponent {
             return generateAlert('error', t('changePassword:passwordTooWeak'), reason);
         }
 
+        if (this.shouldStartYubikey(yubiHashedPasswordCur === null)) {
+            return;
+        }
+
         try {
-            const passwordNewHash = await hash(passwordNew);
-            const passwordCurrentHash = await hash(passwordCurrent);
+            const passwordNewHash = yubiHashedPasswordNew !== null ? yubiHashedPasswordNew : await hash(passwordNew);
+            const passwordCurrentHash =
+                yubiHashedPasswordCur !== null ? yubiHashedPasswordCur : await hash(passwordCurrent);
 
             await SeedStore[accountMeta.type].updatePassword(passwordCurrentHash, passwordNewHash);
 
@@ -132,6 +178,8 @@ class PasswordSettings extends PureComponent {
 
 const mapStateToProps = (state) => ({
     accountMeta: getSelectedAccountMeta(state),
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

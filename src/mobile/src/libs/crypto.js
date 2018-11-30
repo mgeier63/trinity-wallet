@@ -3,7 +3,8 @@ import { generateSecureRandom } from 'react-native-securerandom';
 import { TextDecoder } from 'text-encoding';
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
-import { getHashFn } from 'libs/nativeModules';
+import { getHashFn, getHashBytesFn } from 'libs/nativeModules';
+import { bytesToHex, hexToBytes } from 'shared-modules/libs/yubikey/YubikeyUtil';
 
 const DEFAULT_ARGON2_PARAMS = { t_cost: 1, m_cost: 4096, parallelism: 4, hashLength: 32 };
 const SALT_LENGTH = 32;
@@ -26,6 +27,15 @@ export const generatePasswordHash = async (password, salt) => {
     const salt64 = await encodeBase64(salt);
     return getHashFn()(password, salt64, DEFAULT_ARGON2_PARAMS).then(
         (result) => new Uint8Array(result.split(',').map((num) => parseInt(num))),
+        (error) => console.log(error), // eslint-disable-line no-console
+    );
+};
+
+export const generatePasswordHashBytes = async (password, salt) => {
+    const passwordHex = bytesToHex(password);
+    const saltHex = bytesToHex(salt);
+    return getHashBytesFn()(passwordHex, saltHex, DEFAULT_ARGON2_PARAMS).then(
+        (result) => hexToBytes(result),
         (error) => console.log(error), // eslint-disable-line no-console
     );
 };

@@ -10,6 +10,7 @@ import {
     encodeBase64,
     decodeBase64,
     generatePasswordHash,
+    generatePasswordHashBytes,
     stringToUInt8,
 } from 'libs/crypto';
 
@@ -66,6 +67,12 @@ export const hash = async (password) => {
     const saltItem = await keychain.get(ALIAS_SALT);
     const salt = await decodeBase64(saltItem.item);
     return await generatePasswordHash(password, salt);
+};
+
+export const hashBytes = async (password) => {
+    const saltItem = await keychain.get(ALIAS_SALT);
+    const salt = await decodeBase64(saltItem.item);
+    return await generatePasswordHashBytes(password, salt);
 };
 
 export const doesSaltExistInKeychain = () => {
@@ -140,6 +147,27 @@ export const changePassword = async (oldPwdHash, newPwdHash, salt) => {
         return await storeTwoFactorAuthKeyInKeychain(newPwdHash, authKey);
     }
     return Promise.resolve();
+};
+
+/**
+ * Set Two-Factor Yubikey protection state
+ * @param {string} Password - Plain text password for decryption
+ * @param {string} Key - Two-factor authentication key
+ * @returns {boolean} Two-Factor key set success state
+ */
+export const enableYubikey2FA = async (passwordCurrentHash, passwordNewHash, enabled) => {
+    try {
+        const saltItem = await keychain.get(ALIAS_SALT);
+        const salt = await decodeBase64(saltItem.item);
+        await changePassword(passwordCurrentHash, passwordNewHash, salt);
+        if (enabled) {
+            //this shouldn't be necessary as the UI should only allow to enable one of OTP or YubiKey methods at a time, but let's play safe
+            await deleteTwoFactorAuthKeyFromKeychain();
+        }
+        return true;
+    } catch (err) {
+        throw err;
+    }
 };
 
 export default keychain;

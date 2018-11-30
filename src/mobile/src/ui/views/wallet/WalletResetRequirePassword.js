@@ -16,6 +16,7 @@ import { Icon } from 'ui/theme/icons';
 import { width, height } from 'libs/dimensions';
 import { Styling } from 'ui/theme/general';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
+import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
 
 const styles = StyleSheet.create({
     container: {
@@ -60,10 +61,15 @@ class WalletResetRequirePassword extends Component {
         t: PropTypes.func.isRequired,
         /** @ignore */
         setCompletedForcedPasswordUpdate: PropTypes.func.isRequired,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    constructor() {
-        super();
+    constructor(props) {
+        super(props);
 
         this.state = {
             password: '',
@@ -71,6 +77,8 @@ class WalletResetRequirePassword extends Component {
 
         this.goBack = this.goBack.bind(this);
         this.resetWallet = this.resetWallet.bind(this);
+
+        applyYubikeyMixinMobile(this, props.yubikeySettings);
     }
 
     componentDidMount() {
@@ -91,16 +99,6 @@ class WalletResetRequirePassword extends Component {
      */
     goBack() {
         Navigation.pop(this.props.componentId);
-    }
-
-    /**
-     * Checks if password is correct
-     * @method isAuthenticated
-     */
-    async isAuthenticated() {
-        const { password } = this.props;
-        const pwdHash = await hash(this.state.password);
-        return isEqual(password, pwdHash);
     }
 
     /**
@@ -140,9 +138,32 @@ class WalletResetRequirePassword extends Component {
      * Resets wallet's state
      * @method resetWallet
      */
-    async resetWallet() {
-        const { t } = this.props;
-        if (await this.isAuthenticated()) {
+    async resetWallet(yubikeyHashedPassword = null) {
+        const { password, t } = this.props;
+
+        if (!this.state.password || this.state.password.length === 0) {
+            this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
+            return;
+        }
+
+        //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
+        if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
+            return;
+        }
+
+        let pwdHash = null;
+
+        if (yubikeyHashedPassword !== null) {
+            pwdHash = yubikeyHashedPassword;
+        } else {
+            try {
+                pwdHash = await hash(this.state.password);
+            } catch (err) {
+                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            }
+        }
+
+        if (isEqual(password, pwdHash)) {
             this.redirectToInitialScreen();
             purgeStoredState(persistConfig)
                 .then(() => clearKeychain())
@@ -169,10 +190,48 @@ class WalletResetRequirePassword extends Component {
         }
     }
 
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings } = this.props;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(this.state.password);
+        } catch (err) {
+            //console.error(err);
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.resetWallet(pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
+    }
+
     render() {
         const { t, theme } = this.props;
         const backgroundColor = { backgroundColor: theme.body.bg };
-
+        if (!this.isYubikeyIdle()) {
+            return (
+                <View style={[styles.container, backgroundColor]}>
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                        {this.renderYubikey()}
+                    </TouchableWithoutFeedback>
+                </View>
+            );
+        }
         return (
             <View style={[styles.container, backgroundColor]}>
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -213,6 +272,8 @@ class WalletResetRequirePassword extends Component {
 const mapStateToProps = (state) => ({
     theme: state.settings.theme,
     password: state.wallet.password,
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
 });
 
 const mapDispatchToProps = {

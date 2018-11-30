@@ -43,6 +43,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import ca.jaysoo.extradimensions.ExtraDimensionsPackage;
+import timber.log.Timber;
 
 public class MainApplication extends NavigationApplication implements ShareApplication {
 
@@ -51,6 +52,10 @@ public class MainApplication extends NavigationApplication implements ShareAppli
         super.attachBaseContext(base);
 
         System.loadLibrary("dummy");
+
+        if (isDebug()) {
+            Timber.plant(new Timber.DebugTree());
+        }
 
         MultiDex.install(this);
     }

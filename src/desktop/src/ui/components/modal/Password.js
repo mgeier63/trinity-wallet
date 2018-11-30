@@ -10,6 +10,8 @@ import { generateAlert } from 'actions/alerts';
 import Password from 'ui/components/input/Password';
 import Button from 'ui/components/Button';
 import Modal from 'ui/components/modal/Modal';
+import Logo from 'ui/components/Logo';
+import { applyYubikeyMixinDesktop } from 'libs/yubikey/YubikeyMixinDesktop';
 
 /**
  * Password confirmation dialog component
@@ -49,11 +51,42 @@ class ModalPassword extends PureComponent {
          * @ignore
          */
         t: PropTypes.func.isRequired,
+        /** @ignore */
+        forceNoYubikeyAndNoAuthCheck: PropTypes.bool,
+        /** @ignore */
+        // eslint-disable-next-line react/no-unused-prop-types
+        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        /** @ignore */
+        yubikeySettings: PropTypes.object.isRequired,
     };
 
-    state = {
-        password: '',
-    };
+    constructor(props) {
+        super(props);
+
+        this.state = {
+            password: '',
+        };
+
+        applyYubikeyMixinDesktop(this, props.yubikeySettings, () => {
+            /*Note: We can't simply use a "Loading" component here, as it somehow gets garbled due to being embedded in a Modal*/
+            return (
+                <Modal
+                    variant="global"
+                    isOpen
+                    isForced
+                    onClose={() => {
+                        /**/
+                    }}
+                >
+                    <div>
+                        <Logo size={200} animate loop />
+                        <h1>{props.t('yubikey:communicating')}</h1>
+                        <h2>{props.t('yubikey:communicatingExplanation')}</h2>
+                    </div>
+                </Modal>
+            );
+        });
+    }
 
     componentWillReceiveProps(nextProps) {
         if (this.props.isOpen !== nextProps.isOpen) {
@@ -63,17 +96,46 @@ class ModalPassword extends PureComponent {
         }
     }
 
-    onSubmit = async (e) => {
+    onSubmit = async (e, yubikeyHashedPassword = null) => {
         const { password } = this.state;
-        const { onSubmit, onSuccess, generateAlert, t } = this.props;
+        const { onSubmit, onSuccess, generateAlert, forceNoYubikeyAndNoAuthCheck, t } = this.props;
 
-        e.preventDefault();
+        if (e) {
+            e.preventDefault();
+        }
 
         if (onSubmit) {
             return onSubmit(password);
         }
 
-        const passwordHash = await hash(password);
+        //Yubikey chokes on 0 bytes input for HMAC, but I think it's generally a good idea to check for empty passwords here
+        //rather than relying on "authorize" to fail
+        if (password.length === 0) {
+            //empty password
+            generateAlert(
+                'error',
+                t('changePassword:incorrectPassword'),
+                t('changePassword:incorrectPasswordExplanation'),
+            );
+            return;
+        }
+
+        if (
+            this.shouldStartYubikey(
+                !(forceNoYubikeyAndNoAuthCheck !== undefined && forceNoYubikeyAndNoAuthCheck) &&
+                    yubikeyHashedPassword === null,
+            )
+        ) {
+            return;
+        }
+
+        const passwordHash = yubikeyHashedPassword !== null ? yubikeyHashedPassword : await hash(password);
+
+        if (forceNoYubikeyAndNoAuthCheck) {
+            //NO auth check in this case!
+            onSuccess(passwordHash);
+            return;
+        }
 
         try {
             await authorize(passwordHash);
@@ -88,6 +150,36 @@ class ModalPassword extends PureComponent {
 
         onSuccess(passwordHash);
     };
+
+    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
+        const { t, yubikeySettings } = this.props;
+        const { password } = this.state;
+
+        let passwordHash = null;
+        try {
+            passwordHash = await hash(password);
+        } catch (err) {
+            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
+            return;
+        }
+
+        try {
+            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
+
+            if (pwYubiHashed !== null) {
+                postResultDelayed(async () => {
+                    this.onSubmit(null, pwYubiHashed);
+                });
+                return;
+            }
+        } catch (err2) {
+            postError(
+                t('yubikey:misconfigured'),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+            );
+            return;
+        }
+    }
 
     render() {
         const { content, category, isOpen, isForced, inline, onClose, t } = this.props;
@@ -120,8 +212,13 @@ class ModalPassword extends PureComponent {
     }
 }
 
+const mapStateToProps = (state) => ({
+    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    yubikeySettings: state.settings.yubikey,
+});
+
 const mapDispatchToProps = {
     generateAlert,
 };
 
-export default connect(null, mapDispatchToProps)(withI18n()(ModalPassword));
+export default connect(mapStateToProps, mapDispatchToProps)(withI18n()(ModalPassword));
