@@ -3,8 +3,9 @@ import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
 import { withNamespaces } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
-import { Navigation } from 'react-native-navigation';
+import { navigator } from 'libs/navigation';
 import { setSetting } from 'shared-modules/actions/wallet';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 import { renderSettingsRows } from 'ui/components/SettingsContent';
 
@@ -40,71 +41,16 @@ class SecuritySettings extends Component {
      * @method on2FASetupPress
      */
     on2FASetupPress() {
-        const { is2FAEnabled, is2FAEnabledYubikey, theme: { body } } = this.props;
-        Navigation.push('appStack', {
-            component: {
-                name: is2FAEnabled ? 'disable2FA' : is2FAEnabledYubikey ? 'twoFASetupYubikey' : 'twoFASetupChooser',
-                options: {
-                    animations: {
-                        push: {
-                            enable: false,
-                        },
-                        pop: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: body.bg,
-                    },
-                },
-            },
-        });
+        const { is2FAEnabled, is2FAEnabledYubikey } = this.props;
+        navigator.push(is2FAEnabled ? 'disable2FA' : is2FAEnabledYubikey ? 'twoFASetupYubikey' : 'twoFASetupChooser');
     }
 
     /**
-     * Navigates to fingerprint setup screen
-     * @method onFingerprintSetupPress
+     * Navigates to BiometricAuthentication screen
+     * @method onBiometricAuthenticationPress
      */
-    onFingerprintSetupPress() {
-        const { theme: { body } } = this.props;
-        Navigation.push('appStack', {
-            component: {
-                name: 'fingerprintSetup',
-                options: {
-                    animations: {
-                        push: {
-                            enable: false,
-                        },
-                        pop: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: body.bg,
-                    },
-                },
-            },
-        });
+    onBiometricAuthenticationPress() {
+        navigator.push('biometricAuthentication');
     }
 
     renderSettingsContent() {
@@ -123,7 +69,7 @@ class SecuritySettings extends Component {
             {
                 name: t('fingerprint'),
                 icon: 'biometric',
-                function: () => this.onFingerprintSetupPress(),
+                function: () => this.onBiometricAuthenticationPress(),
                 currentSetting: isFingerprintEnabled ? t('enabled') : t('disabled'),
             },
             { name: 'back', function: () => this.props.setSetting('mainSettings') },
@@ -137,7 +83,7 @@ class SecuritySettings extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     is2FAEnabled: state.settings.is2FAEnabled,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
     isFingerprintEnabled: state.settings.isFingerprintEnabled,

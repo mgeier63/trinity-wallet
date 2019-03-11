@@ -1,13 +1,15 @@
+import extend from 'lodash/extend';
 import map from 'lodash/map';
 import noop from 'lodash/noop';
 import findLastIndex from 'lodash/findLastIndex';
 import reduce from 'lodash/reduce';
-import { updateAddresses, updateAccountAfterTransition } from '../actions/accounts';
+import { updateAddressData, updateAccountAfterTransition } from '../actions/accounts';
 import {
     generateAlert,
     generateTransitionErrorAlert,
     generateAddressesSyncRetryAlert,
     generateNodeOutOfSyncErrorAlert,
+    generateUnsupportedNodeErrorAlert,
 } from '../actions/alerts';
 import { setActiveStepIndex, startTrackingProgress, reset as resetProgress } from '../actions/progress';
 import { changeNode } from '../actions/settings';
@@ -15,26 +17,23 @@ import { accumulateBalance, attachAndFormatAddress, syncAddresses } from '../lib
 import i18next from '../libs/i18next';
 import { syncAccountDuringSnapshotTransition } from '../libs/iota/accounts';
 import { getBalancesAsync } from '../libs/iota/extendedApi';
-import { withRetriesOnDifferentNodes, getRandomNodes, throwIfNodeNotSynced } from '../libs/iota/utils';
+import { withRetriesOnDifferentNodes, getRandomNodes } from '../libs/iota/utils';
 import Errors from '../libs/errors';
-import {
-    selectedAccountStateFactory,
-    getRemotePoWFromState,
-    getSelectedNodeFromState,
-    getNodesFromState,
-} from '../selectors/accounts';
+import { selectedAccountStateFactory } from '../selectors/accounts';
+import { getSelectedNodeFromState, getNodesFromState, getRemotePoWFromState } from '../selectors/global';
+import { Account } from '../storage';
 import { DEFAULT_SECURITY, DEFAULT_RETRIES } from '../config';
 
 export const ActionTypes = {
     GENERATE_NEW_ADDRESS_REQUEST: 'IOTA/WALLET/GENERATE_NEW_ADDRESS_REQUEST',
     GENERATE_NEW_ADDRESS_SUCCESS: 'IOTA/WALLET/GENERATE_NEW_ADDRESS_SUCCESS',
     GENERATE_NEW_ADDRESS_ERROR: 'IOTA/WALLET/GENERATE_NEW_ADDRESS_ERROR',
+    SET_ACCOUNT_NAME: 'IOTA/WALLET/SET_ACCOUNT_NAME',
     SET_RECEIVE_ADDRESS: 'IOTA/WALLET/SET_RECEIVE_ADDRESS',
     SET_PASSWORD: 'IOTA/WALLET/SET_PASSWORD',
     CLEAR_WALLET_DATA: 'IOTA/WALLET/CLEAR_WALLET_DATA',
     SET_SEED_INDEX: 'IOTA/WALLET/SET_SEED_INDEX',
     SET_READY: 'IOTA/WALLET/SET_READY',
-    CLEAR_SEED: 'IOTA/WALLET/CLEAR_SEED',
     SET_SETTING: 'IOTA/WALLET/SET_SETTING',
     SNAPSHOT_TRANSITION_REQUEST: 'IOTA/WALLET/SNAPSHOT_TRANSITION_REQUEST',
     SNAPSHOT_TRANSITION_SUCCESS: 'IOTA/WALLET/SNAPSHOT_TRANSITION_SUCCESS',
@@ -50,8 +49,12 @@ export const ActionTypes = {
     FORCE_UPDATE: 'IOTA/APP/WALLET/FORCE_UPDATE',
     SET_DEEP_LINK: 'IOTA/APP/WALLET/SET_DEEP_LINK',
     SET_DEEP_LINK_INACTIVE: 'IOTA/APP/WALLET/SET_DEEP_LINK_INACTIVE',
+    MAP_STORAGE_TO_STATE: 'IOTA/SETTINGS/MAP_STORAGE_TO_STATE',
     ADDRESS_VALIDATION_REQUEST: 'IOTA/APP/WALLET/ADDRESS_VALIDATION_REQUEST',
     ADDRESS_VALIDATION_SUCCESS: 'IOTA/APP/WALLET/ADDRESS_VALIDATION_SUCCESS',
+    PUSH_ROUTE: 'IOTA/APP/WALLET/PUSH_ROUTE',
+    POP_ROUTE: 'IOTA/APP/WALLET/POP_ROUTE',
+    RESET_ROUTE: 'IOTA/APP/WALLET/RESET_ROUTE',
 };
 
 /**
@@ -103,7 +106,7 @@ export const setPassword = (payload) => ({
 /**
  * Dispatch to clear "wallet" reducer state
  *
- * @method setPassword
+ * @method clearWalletData
  *
  * @returns {{type: {string} }}
  */
@@ -134,18 +137,6 @@ export const setSeedIndex = (payload) => ({
 export const setReady = () => ({
     type: ActionTypes.SET_READY,
     payload: true,
-});
-
-/**
- * Dispatch to clear temporarily stored seed from state
- *
- * @method clearSeed
- *
- * @returns {{type: {string} }}
- */
-export const clearSeed = () => ({
-    type: ActionTypes.CLEAR_SEED,
-    payload: Array(82).join(' '),
 });
 
 /**
@@ -299,6 +290,19 @@ export const setDeepLinkInactive = () => {
 };
 
 /**
+ * Dispatch to map storage (persisted) data to redux state
+ *
+ * @method mapStorageToState
+ * @param {object} payload
+
+ * @returns {{type: {string}, payload: {object} }}
+ */
+export const mapStorageToState = (payload) => ({
+    type: ActionTypes.MAP_STORAGE_TO_STATE,
+    payload,
+});
+
+/**
  * Generate new receive address for wallet
  *
  * @method generateNewAddress
@@ -306,7 +310,6 @@ export const setDeepLinkInactive = () => {
  * @param {object} seedStore - SeedStore class object
  * @param {string} accountName
  * @param {object} existingAccountData
- * @param {function} genFn
  *
  * @returns {function(*): Promise<any>}
  */
@@ -314,25 +317,29 @@ export const generateNewAddress = (seedStore, accountName, existingAccountData) 
     return (dispatch, getState) => {
         dispatch(generateNewAddressRequest());
 
-        const syncAddressesWithSyncedNode = (provider) => {
-            return (...args) => throwIfNodeNotSynced(provider).then(() => syncAddresses(provider)(...args));
-        };
-
         const selectedNode = getSelectedNodeFromState(getState());
         return withRetriesOnDifferentNodes(
             [selectedNode, ...getRandomNodes(getNodesFromState(getState()), DEFAULT_RETRIES, [selectedNode])],
             () => dispatch(generateAddressesSyncRetryAlert()),
-        )(syncAddressesWithSyncedNode)(
-            seedStore,
-            existingAccountData.addresses,
-            map(existingAccountData.transfers, (tx) => tx),
-        )
+        )(syncAddresses)(seedStore, existingAccountData.addressData, existingAccountData.transactions)
             .then(({ node, result }) => {
                 dispatch(changeNode(node));
-                dispatch(updateAddresses(accountName, result));
+
+                // Update address data in storage (realm)
+                Account.update(accountName, { addressData: result });
+
+                dispatch(updateAddressData(accountName, result));
                 dispatch(generateNewAddressSuccess());
             })
             .catch(() => {
+                dispatch(
+                    generateAlert(
+                        'error',
+                        i18next.t('global:somethingWentWrong'),
+                        i18next.t('global:somethingWentWrongTryAgain'),
+                        10000,
+                    ),
+                );
                 dispatch(generateNewAddressError());
             });
     };
@@ -373,11 +380,11 @@ export const transitionForSnapshot = (seedStore, addresses) => {
  * @param {object} seedStore - SeedStore class object
  * @param {string} accountName
  * @param {array} addresses
- * @param {function} powFn
+ * @param {boolean} withQuorum
  *
  * @returns {function}
  */
-export const completeSnapshotTransition = (seedStore, accountName, addresses, powFn) => {
+export const completeSnapshotTransition = (seedStore, accountName, addresses, withQuorum = true) => {
     return (dispatch, getState) => {
         dispatch(
             generateAlert(
@@ -389,9 +396,7 @@ export const completeSnapshotTransition = (seedStore, accountName, addresses, po
 
         dispatch(snapshotAttachToTangleRequest());
 
-        // Check node's health
-        throwIfNodeNotSynced()
-            .then(() => getBalancesAsync()(addresses))
+        getBalancesAsync(undefined, withQuorum)(addresses)
             // Find balance on all addresses
             .then((balances) => {
                 const allBalances = map(balances.balances, Number);
@@ -417,22 +422,31 @@ export const completeSnapshotTransition = (seedStore, accountName, addresses, po
 
                             const existingAccountState = selectedAccountStateFactory(accountName)(getState());
 
-                            return attachAndFormatAddress()(
+                            return attachAndFormatAddress(undefined, withQuorum)(
                                 address,
                                 index,
                                 relevantBalances[index],
-                                seedStore,
-                                map(existingAccountState.transfers, (tx) => tx),
-                                existingAccountState.addresses,
-                                // Pass proof of work function as null, if configuration is set to remote
-                                getRemotePoWFromState(getState()) ? null : powFn,
+                                getRemotePoWFromState(getState())
+                                    ? extend(
+                                          {
+                                              __proto__: seedStore.__proto__,
+                                          },
+                                          seedStore,
+                                          { offloadPow: true },
+                                      )
+                                    : seedStore,
+                                existingAccountState,
                             )
-                                .then(({ addressData, transfer }) => {
-                                    const { newState } = syncAccountDuringSnapshotTransition(
-                                        transfer,
-                                        addressData,
+                                .then(({ attachedAddressObject, attachedTransactions }) => {
+                                    const newState = syncAccountDuringSnapshotTransition(
+                                        attachedTransactions,
+                                        attachedAddressObject,
                                         existingAccountState,
                                     );
+
+                                    // Update storage (realm)
+                                    Account.update(accountName, newState);
+                                    // Update redux store
                                     dispatch(updateAccountAfterTransition(newState));
 
                                     return result;
@@ -460,6 +474,8 @@ export const completeSnapshotTransition = (seedStore, accountName, addresses, po
             .catch((error) => {
                 if (error.message === Errors.NODE_NOT_SYNCED) {
                     dispatch(generateNodeOutOfSyncErrorAlert());
+                } else if (error.message === Errors.UNSUPPORTED_NODE) {
+                    dispatch(generateUnsupportedNodeErrorAlert());
                 } else {
                     dispatch(generateTransitionErrorAlert(error));
                 }
@@ -508,14 +524,16 @@ export const generateAddressesAndGetBalance = (seedStore, index) => {
  * @method getBalanceForCheck
  *
  * @param {array} addresses
+ * @param {boolean} withQuorum
  *
  * @returns {function}
  */
-export const getBalanceForCheck = (addresses) => {
+export const getBalanceForCheck = (addresses, withQuorum = true) => {
     return (dispatch) => {
-        getBalancesAsync()(addresses)
+        getBalancesAsync(undefined, withQuorum)(addresses)
             .then((balances) => {
                 const balanceOnAddresses = accumulateBalance(map(balances.balances, Number));
+
                 dispatch(updateTransitionBalance(balanceOnAddresses));
                 dispatch(setBalanceCheckFlag(true));
             })
@@ -547,6 +565,49 @@ export const addressValidationRequest = () => ({
 export const addressValidationSuccess = () => ({
     type: ActionTypes.ADDRESS_VALIDATION_SUCCESS,
 });
+
+/**
+ * Dispatch to push to navigation stack
+ *
+ * @method pushRoute
+ * @param {string} payload
+ *
+ * @returns {{ type: {string}, payload: {string} }}
+ */
+export const pushRoute = (payload) => {
+    return {
+        type: ActionTypes.PUSH_ROUTE,
+        payload,
+    };
+};
+
+/**
+ * Dispatch to pop from navigation stack
+ *
+ * @method popRoute
+ *
+ * @returns {{type: {string}}}
+ */
+export const popRoute = () => {
+    return {
+        type: ActionTypes.POP_ROUTE,
+    };
+};
+
+/**
+ * Dispatch to set navigation root
+ *
+ * @method resetRoute
+ * @param {string} payload
+ *
+ * @returns {{ type: {string}, payload: {string} }}
+ */
+export const resetRoute = (payload) => {
+    return {
+        type: ActionTypes.RESET_ROUTE,
+        payload,
+    };
+};
 
 /**
  * Dispatch to suggest that user should update

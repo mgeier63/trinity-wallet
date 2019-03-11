@@ -4,10 +4,11 @@ import { withNamespaces } from 'react-i18next';
 import { connect } from 'react-redux';
 import { StyleSheet, View } from 'react-native';
 import i18next from 'shared-modules/libs/i18next';
-import { Navigation } from 'react-native-navigation';
+import timer from 'react-native-timer';
 import { toggleModalActivity } from 'shared-modules/actions/ui';
 import { getLabelFromLocale } from 'shared-modules/libs/i18n';
-import { setSetting, clearWalletData, setPassword } from 'shared-modules/actions/wallet';
+import { getThemeFromState } from 'shared-modules/selectors/global';
+import { setSetting } from 'shared-modules/actions/wallet';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 import { renderSettingsRows } from 'ui/components/SettingsContent';
 
@@ -34,21 +35,20 @@ export class MainSettings extends Component {
         /** @ignore */
         t: PropTypes.func.isRequired,
         /** @ignore */
-        clearWalletData: PropTypes.func.isRequired,
-        /** @ignore */
-        setPassword: PropTypes.func.isRequired,
-        /** @ignore */
         toggleModalActivity: PropTypes.func.isRequired,
     };
 
     constructor() {
         super();
         this.openLogoutModal = this.openLogoutModal.bind(this);
-        this.logout = this.logout.bind(this);
     }
 
     componentDidMount() {
         leaveNavigationBreadcrumb('MainSettings');
+    }
+
+    componentWillUnmount() {
+        timer.clearTimeout('delayLogout');
     }
 
     /**
@@ -56,50 +56,11 @@ export class MainSettings extends Component {
      * @method openLogoutModal
      */
     openLogoutModal() {
-        const { theme: { body } } = this.props;
+        const { theme } = this.props;
         this.props.toggleModalActivity('logoutConfirmation', {
             style: { flex: 1 },
             hideModal: () => this.props.toggleModalActivity(),
-            logout: this.logout,
-            backgroundColor: { backgroundColor: body.bg },
-            textColor: { color: body.color },
-            borderColor: { borderColor: body.color },
-        });
-    }
-
-    /**
-     * Clears temporary wallet data and navigates to login screen
-     * @method logout
-     */
-    logout() {
-        const { theme: { body } } = this.props;
-        this.props.toggleModalActivity();
-        this.props.clearWalletData();
-        this.props.setPassword({});
-        Navigation.setStackRoot('appStack', {
-            component: {
-                name: 'login',
-                options: {
-                    animations: {
-                        setStackRoot: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: body.bg,
-                    },
-                },
-            },
+            theme,
         });
     }
 
@@ -154,13 +115,11 @@ const mapStateToProps = (state) => ({
     mode: state.settings.mode,
     currency: state.settings.currency,
     themeName: state.settings.themeName,
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
 });
 
 const mapDispatchToProps = {
     setSetting,
-    clearWalletData,
-    setPassword,
     toggleModalActivity,
 };
 

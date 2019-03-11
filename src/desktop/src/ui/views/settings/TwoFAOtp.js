@@ -180,7 +180,9 @@ class TwoFAOtp extends React.Component {
 
         const qr = new QRCode(-1, 1);
 
-        qr.addData(authenticator.generateTotpUri(key, 'Trinity desktop wallet'));
+        const totpLink = `${'otpauth://totp/Trinity Wallet Desktop?secret='}${key.replace(/\W/g, '').toLowerCase()}`;
+
+        qr.addData(totpLink);
         qr.make();
 
         const cells = qr.modules;

@@ -73,29 +73,35 @@ class SetNode extends PureComponent {
 
         return (
             <form onSubmit={this.changeNode}>
-                <Select
-                    value={selection || node}
-                    label={t('node')}
-                    disabled={customNode.length > 0}
-                    onChange={this.changeSelectedNode}
-                    options={nodes.map((item) => {
-                        return { value: item, label: item };
-                    })}
-                />
-
-                <Text value={customNode} label={t('addCustomNode:customNode')} onChange={this.changeCustomNode} />
-
                 <fieldset>
-                    <Button type="submit" loading={loading} disabled={!selectedNode || selectedNode === node}>
+                    <Select
+                        value={selection || node}
+                        label={t('node')}
+                        disabled={customNode.length > 0}
+                        onChange={this.changeSelectedNode}
+                        options={nodes.map((item) => {
+                            return { value: item, label: item };
+                        })}
+                    />
+
+                    <Text value={customNode} label={t('addCustomNode:customNode')} onChange={this.changeCustomNode} />
+                </fieldset>
+                <footer>
+                    <Button
+                        className="square"
+                        type="submit"
+                        loading={loading}
+                        disabled={!selectedNode || selectedNode === node}
+                    >
                         {t('save')}
                     </Button>
                     {selection !== node &&
                         customNodes.indexOf(selection) > -1 && (
-                            <Button onClick={this.removeNode} variant="negative">
+                            <Button className="square" onClick={this.removeNode} variant="negative">
                                 {t('addCustomNode:removeCustomNode')}
                             </Button>
                         )}
-                </fieldset>
+                </footer>
             </form>
         );
     }

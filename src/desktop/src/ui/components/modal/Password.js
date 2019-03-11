@@ -1,12 +1,16 @@
+/* global Electron */
 import React, { PureComponent } from 'react';
 import PropTypes from 'prop-types';
 import { withI18n } from 'react-i18next';
 import { connect } from 'react-redux';
+import authenticator from 'authenticator';
 
 import { hash, authorize } from 'libs/crypto';
 
 import { generateAlert } from 'actions/alerts';
+import { TWOFA_TOKEN_LENGTH } from 'libs/utils';
 
+import Text from 'ui/components/input/Text';
 import Password from 'ui/components/input/Password';
 import Button from 'ui/components/Button';
 import Modal from 'ui/components/modal/Modal';
@@ -27,6 +31,8 @@ class ModalPassword extends PureComponent {
         isOpen: PropTypes.bool,
         /** Should the dialog be without a cancel option */
         isForced: PropTypes.bool,
+        /** Should 2fa authorisation be skipped */
+        skip2fa: PropTypes.bool,
         /** Modal inline style state */
         inline: PropTypes.bool,
         /** On dialog close event */
@@ -57,7 +63,7 @@ class ModalPassword extends PureComponent {
         // eslint-disable-next-line react/no-unused-prop-types
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
     };
 
     constructor(props) {
@@ -65,9 +71,11 @@ class ModalPassword extends PureComponent {
 
         this.state = {
             password: '',
+            code: '',
+            verifyTwoFA: false,
         };
 
-        applyYubikeyMixinDesktop(this, props.yubikeySettings, () => {
+        applyYubikeyMixinDesktop(this, props.yubikeySlot, () => {
             /*Note: We can't simply use a "Loading" component here, as it somehow gets garbled due to being embedded in a Modal*/
             return (
                 <Modal
@@ -96,9 +104,21 @@ class ModalPassword extends PureComponent {
         }
     }
 
-    onSubmit = async (e, yubikeyHashedPassword = null) => {
-        const { password } = this.state;
-        const { onSubmit, onSuccess, generateAlert, forceNoYubikeyAndNoAuthCheck, t } = this.props;
+    componentWillUnmount() {
+        setTimeout(() => Electron.garbageCollect(), 1000);
+    }
+
+    /**
+     * Update 2fa code value and trigger authentication once necessary length is reached
+     * @param {string} value - Code value
+     */
+    setCode = (value) => {
+        this.setState({ code: value }, () => value.length === TWOFA_TOKEN_LENGTH && this.handleSubmit());
+    };
+
+    handleSubmit = async (e, yubikeyHashedPassword = null) => {
+        const { password, code, verifyTwoFA } = this.state;
+        const { skip2fa, onSuccess, onSubmit, generateAlert, forceNoYubikeyAndNoAuthCheck, t } = this.props;
 
         if (e) {
             e.preventDefault();
@@ -107,6 +127,8 @@ class ModalPassword extends PureComponent {
         if (onSubmit) {
             return onSubmit(password);
         }
+
+        let authorised = false;
 
         //Yubikey chokes on 0 bytes input for HMAC, but I think it's generally a good idea to check for empty passwords here
         //rather than relying on "authorize" to fail
@@ -123,7 +145,7 @@ class ModalPassword extends PureComponent {
         if (
             this.shouldStartYubikey(
                 !(forceNoYubikeyAndNoAuthCheck !== undefined && forceNoYubikeyAndNoAuthCheck) &&
-                    yubikeyHashedPassword === null,
+                yubikeyHashedPassword === null,
             )
         ) {
             return;
@@ -137,8 +159,22 @@ class ModalPassword extends PureComponent {
             return;
         }
 
+
         try {
-            await authorize(passwordHash);
+            authorised = await authorize(passwordHash);
+
+            if (!skip2fa && typeof authorised === 'string' && !authenticator.verifyToken(authorised, code)) {
+                if (verifyTwoFA) {
+                    generateAlert('error', t('twoFA:wrongCode'), t('twoFA:wrongCodeExplanation'));
+                }
+
+                this.setState({
+                    verifyTwoFA: true,
+                    code: '',
+                });
+
+                return;
+            }
         } catch (err) {
             generateAlert(
                 'error',
@@ -152,7 +188,7 @@ class ModalPassword extends PureComponent {
     };
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
         const { password } = this.state;
 
         let passwordHash = null;
@@ -175,21 +211,20 @@ class ModalPassword extends PureComponent {
         } catch (err2) {
             postError(
                 t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }),
             );
             return;
         }
     }
 
-    render() {
-        const { content, category, isOpen, isForced, inline, onClose, t } = this.props;
+    passwordContent = () => {
+        const { content, category, isOpen, isForced, onClose, t } = this.props;
         const { password } = this.state;
-
         return (
-            <Modal variant="confirm" inline={inline} isOpen={isOpen} isForced={isForced} onClose={() => onClose()}>
+            <React.Fragment>
                 {content.title ? <h1 className={category ? category : null}>{content.title}</h1> : null}
                 {content.message ? <p>{content.message}</p> : null}
-                <form onSubmit={(e) => this.onSubmit(e)}>
+                <form onSubmit={(e) => this.handleSubmit(e)}>
                     <Password
                         value={password}
                         focus={isOpen}
@@ -197,16 +232,50 @@ class ModalPassword extends PureComponent {
                         onChange={(value) => this.setState({ password: value })}
                     />
                     <footer>
-                        {!isForced ? (
+                        {!isForced && (
                             <Button onClick={() => onClose()} variant="dark">
                                 {t('cancel')}
                             </Button>
-                        ) : null}
+                        )}
                         <Button type="submit" variant={category ? category : 'primary'}>
                             {content.confirm ? content.confirm : t('login:login')}
                         </Button>
                     </footer>
                 </form>
+            </React.Fragment>
+        );
+    };
+
+    twoFaContent = () => {
+        const { isForced, onClose, t } = this.props;
+        const { code } = this.state;
+        return (
+            <React.Fragment>
+                <p>{t('twoFA:enterCode')}</p>
+                <form onSubmit={(e) => this.handleSubmit(e)}>
+                    <Text value={code} focus label={t('twoFA:code')} onChange={this.setCode} />
+                    <footer>
+                        {!isForced && (
+                            <Button onClick={() => onClose()} variant="dark">
+                                {t('cancel')}
+                            </Button>
+                        )}
+                        <Button type="submit" variant="primary">
+                            {t('login:login')}
+                        </Button>
+                    </footer>
+                </form>
+            </React.Fragment>
+        );
+    };
+
+    render() {
+        const { isOpen, isForced, inline, onClose } = this.props;
+        const { verifyTwoFA } = this.state;
+
+        return (
+            <Modal variant="confirm" isOpen={isOpen} inline={inline} isForced={isForced} onClose={() => onClose()}>
+                {verifyTwoFA ? this.twoFaContent() : this.passwordContent()}
             </Modal>
         );
     }
@@ -214,7 +283,7 @@ class ModalPassword extends PureComponent {
 
 const mapStateToProps = (state) => ({
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
 });
 
 const mapDispatchToProps = {

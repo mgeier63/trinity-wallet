@@ -1,19 +1,22 @@
+import isEmpty from 'lodash/isEmpty';
 import isEqual from 'lodash/isEqual';
 import React, { Component } from 'react';
 import { withNamespaces } from 'react-i18next';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
-import { Navigation } from 'react-native-navigation';
+import { navigator } from 'libs/navigation';
 import { resetWallet, setCompletedForcedPasswordUpdate } from 'shared-modules/actions/settings';
 import { generateAlert } from 'shared-modules/actions/alerts';
-import { StyleSheet, View, Keyboard, TouchableWithoutFeedback, BackHandler } from 'react-native';
+import { shouldPreventAction, getThemeFromState } from 'shared-modules/selectors/global';
+import { reinitialise as reinitialiseStorage } from 'shared-modules/storage';
+import { getEncryptionKey } from 'libs/realm';
+import { Text, StyleSheet, View, Keyboard, TouchableWithoutFeedback, BackHandler } from 'react-native';
 import DualFooterButtons from 'ui/components/DualFooterButtons';
-import { persistConfig } from 'libs/store';
-import { purgeStoredState } from 'shared-modules/store';
+import AnimatedComponent from 'ui/components/AnimatedComponent';
 import { clearKeychain, hash } from 'libs/keychain';
 import CustomTextInput from 'ui/components/CustomTextInput';
-import { Icon } from 'ui/theme/icons';
-import { width, height } from 'libs/dimensions';
+import InfoBox from 'ui/components/InfoBox';
+import Header from 'ui/components/Header';
 import { Styling } from 'ui/theme/general';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
@@ -25,13 +28,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     topWrapper: {
-        flex: 0.5,
+        flex: 0.9,
         alignItems: 'center',
         justifyContent: 'flex-start',
-        paddingTop: height / 16,
     },
     midWrapper: {
-        flex: 3.7,
+        flex: 4.6,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -39,6 +41,12 @@ const styles = StyleSheet.create({
         flex: 0.5,
         alignItems: 'center',
         justifyContent: 'flex-end',
+    },
+    infoText: {
+        fontSize: Styling.fontSize3,
+        fontFamily: 'SourceSansPro-Light',
+        textAlign: 'center',
+        backgroundColor: 'transparent',
     },
 });
 
@@ -50,8 +58,6 @@ class WalletResetRequirePassword extends Component {
         /** Component ID */
         componentId: PropTypes.string.isRequired,
         /** @ignore */
-        password: PropTypes.object.isRequired,
-        /** @ignore */
         resetWallet: PropTypes.func.isRequired,
         /** @ignore */
         generateAlert: PropTypes.func.isRequired,
@@ -62,23 +68,29 @@ class WalletResetRequirePassword extends Component {
         /** @ignore */
         setCompletedForcedPasswordUpdate: PropTypes.func.isRequired,
         /** @ignore */
+        isAutoPromoting: PropTypes.bool.isRequired,
+        /** Determines whether to allow account change */
+        shouldPreventAction: PropTypes.bool.isRequired,
+        /** @ignore */
         // eslint-disable-next-line react/no-unused-prop-types
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
+        /** @ignore */
+        yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
+
     };
 
     constructor(props) {
         super(props);
 
         this.state = {
-            password: '',
+            password: null,
         };
-
         this.goBack = this.goBack.bind(this);
         this.resetWallet = this.resetWallet.bind(this);
 
-        applyYubikeyMixinMobile(this, props.yubikeySettings);
+        applyYubikeyMixinMobile(this, props.yubikeySlot, props.yubikeyAndroidReaderMode);
     }
 
     componentDidMount() {
@@ -91,6 +103,7 @@ class WalletResetRequirePassword extends Component {
 
     componentWillUnmount() {
         BackHandler.removeEventListener('hardwareBackPress');
+        delete this.state.password;
     }
 
     /**
@@ -98,7 +111,7 @@ class WalletResetRequirePassword extends Component {
      * @method goBack
      */
     goBack() {
-        Navigation.pop(this.props.componentId);
+        navigator.pop(this.props.componentId);
     }
 
     /**
@@ -106,32 +119,7 @@ class WalletResetRequirePassword extends Component {
      * @method redirectToInitialScreen
      */
     redirectToInitialScreen() {
-        const { theme: { body } } = this.props;
-        Navigation.setStackRoot('appStack', {
-            component: {
-                name: 'languageSetup',
-                options: {
-                    animations: {
-                        setStackRoot: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: body.bg,
-                    },
-                },
-            },
-        });
+        navigator.setStackRoot('languageSetup');
     }
 
     /**
@@ -139,11 +127,13 @@ class WalletResetRequirePassword extends Component {
      * @method resetWallet
      */
     async resetWallet(yubikeyHashedPassword = null) {
-        const { password, t } = this.props;
-
-        if (!this.state.password || this.state.password.length === 0) {
-            this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
-            return;
+        const { t } = this.props;
+        const { isAutoPromoting, shouldPreventAction } = this.props;
+        if (isAutoPromoting || shouldPreventAction) {
+            return this.props.generateAlert('error', t('global:pleaseWait'), t('global:pleaseWaitExplanation'));
+        }
+        if (isEmpty(this.state.password)) {
+            return this.props.generateAlert('error', t('login:emptyPassword'), t('emptyPasswordExplanation'));
         }
 
         //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
@@ -156,18 +146,14 @@ class WalletResetRequirePassword extends Component {
         if (yubikeyHashedPassword !== null) {
             pwdHash = yubikeyHashedPassword;
         } else {
-            try {
-                pwdHash = await hash(this.state.password);
-            } catch (err) {
-                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
-            }
+            pwdHash = await hash(this.state.password);
         }
 
-        if (isEqual(password, pwdHash)) {
-            this.redirectToInitialScreen();
-            purgeStoredState(persistConfig)
+        if (isEqual(global.passwordHash, pwdHash)) {
+            reinitialiseStorage(getEncryptionKey)
                 .then(() => clearKeychain())
                 .then(() => {
+                    this.redirectToInitialScreen();
                     // resetWallet action creator resets the whole state object to default values
                     // https://github.com/iotaledger/trinity-wallet/blob/develop/src/shared/store.js#L37
                     this.props.resetWallet();
@@ -237,30 +223,57 @@ class WalletResetRequirePassword extends Component {
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View>
                         <View style={styles.topWrapper}>
-                            <Icon name="iota" size={width / 8} color={theme.body.color} />
+                            <AnimatedComponent
+                                animationInType={['slideInRight', 'fadeIn']}
+                                animationOutType={['slideOutLeft', 'fadeOut']}
+                                delay={400}
+                            >
+                                <Header textColor={theme.body.color} />
+                            </AnimatedComponent>
                         </View>
                         <View style={styles.midWrapper}>
-                            <CustomTextInput
-                                label={t('global:password')}
-                                onChangeText={(password) => this.setState({ password })}
-                                value={this.state.password}
-                                containerStyle={{ width: Styling.contentWidth }}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                enablesReturnKeyAutomatically
-                                returnKeyType="done"
-                                theme={theme}
-                                secureTextEntry
-                            />
-                            <View style={{ flex: 0.2 }} />
+                            <AnimatedComponent
+                                animationInType={['slideInRight', 'fadeIn']}
+                                animationOutType={['slideOutLeft', 'fadeOut']}
+                                delay={300}
+                            >
+                                <InfoBox>
+                                    <Text style={[styles.infoText, { color: theme.body.color }]}>
+                                        {t('enterPassword')}
+                                    </Text>
+                                </InfoBox>
+                            </AnimatedComponent>
+                            <View style={{ flex: 0.1 }} />
+                            <AnimatedComponent
+                                animationInType={['slideInRight', 'fadeIn']}
+                                animationOutType={['slideOutLeft', 'fadeOut']}
+                                delay={100}
+                            >
+                                <CustomTextInput
+                                    label={t('global:password')}
+                                    onValidTextChange={(password) => this.setState({ password })}
+                                    value={this.state.password}
+                                    containerStyle={{ width: Styling.contentWidth }}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    enablesReturnKeyAutomatically
+                                    returnKeyType="done"
+                                    theme={theme}
+                                    secureTextEntry
+                                    isPasswordInput
+                                />
+                            </AnimatedComponent>
+                            <View style={{ flex: 0.1 }} />
                         </View>
                         <View style={styles.bottomContainer}>
-                            <DualFooterButtons
-                                onLeftButtonPress={this.goBack}
-                                onRightButtonPress={this.resetWallet}
-                                leftButtonText={t('global:cancel')}
-                                rightButtonText={t('reset')}
-                            />
+                            <AnimatedComponent animationInType={['fadeIn']} animationOutType={['fadeOut']} delay={0}>
+                                <DualFooterButtons
+                                    onLeftButtonPress={this.goBack}
+                                    onRightButtonPress={this.resetWallet}
+                                    leftButtonText={t('global:cancel')}
+                                    rightButtonText={t('reset')}
+                                />
+                            </AnimatedComponent>
                         </View>
                     </View>
                 </TouchableWithoutFeedback>
@@ -270,10 +283,12 @@ class WalletResetRequirePassword extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
-    password: state.wallet.password,
+    theme: getThemeFromState(state),
+    shouldPreventAction: shouldPreventAction(state),
+    isAutoPromoting: state.polling.isAutoPromoting,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
+    yubikeyAndroidReaderMode: state.settings.yubikeyAndroidReaderMode,
 });
 
 const mapDispatchToProps = {

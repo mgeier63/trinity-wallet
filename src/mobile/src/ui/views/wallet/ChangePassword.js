@@ -1,11 +1,13 @@
+import isEmpty from 'lodash/isEmpty';
 import isEqual from 'lodash/isEqual';
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { withNamespaces } from 'react-i18next';
 import { StyleSheet, View, Text, TouchableWithoutFeedback, TouchableOpacity, Keyboard } from 'react-native';
 import { connect } from 'react-redux';
-import { setPassword, setSetting } from 'shared-modules/actions/wallet';
+import { setSetting } from 'shared-modules/actions/wallet';
 import { generateAlert } from 'shared-modules/actions/alerts';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { changePassword, hash } from 'libs/keychain';
 import { generatePasswordHash, getSalt } from 'libs/crypto';
 import { width, height } from 'libs/dimensions';
@@ -39,7 +41,7 @@ const styles = StyleSheet.create({
     infoText: {
         fontFamily: 'SourceSansPro-Light',
         fontSize: Styling.fontSize3,
-        textAlign: 'left',
+        textAlign: 'center',
         backgroundColor: 'transparent',
     },
     itemLeft: {
@@ -72,10 +74,6 @@ const styles = StyleSheet.create({
 class ChangePassword extends Component {
     static propTypes = {
         /** @ignore */
-        currentPwdHash: PropTypes.object.isRequired,
-        /** @ignore */
-        setPassword: PropTypes.func.isRequired,
-        /** @ignore */
         setSetting: PropTypes.func.isRequired,
         /** @ignore */
         generateAlert: PropTypes.func.isRequired,
@@ -87,22 +85,30 @@ class ChangePassword extends Component {
         // eslint-disable-next-line react/no-unused-prop-types
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
+        /** @ignore */
+        yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
     };
 
     constructor(props) {
         super(props);
         this.state = {
-            currentPassword: '',
-            newPassword: '',
-            newPasswordReentry: '',
+            currentPassword: null,
+            newPassword: null,
+            newPasswordReentry: null,
         };
 
-        applyYubikeyMixinMobile(this, props.yubikeySettings);
+        applyYubikeyMixinMobile(this, props.yubikeySlot, props.yubikeyAndroidReaderMode);
     }
 
     componentDidMount() {
         leaveNavigationBreadcrumb('ChangePassword');
+    }
+
+    componentWillUnmount() {
+        delete this.state.currentPassword;
+        delete this.state.newPassword;
+        delete this.state.newPasswordReentry;
     }
 
     /**
@@ -111,33 +117,32 @@ class ChangePassword extends Component {
      * @method onAcceptPassword
      */
     async onAcceptPassword(yubiHashedPasswordCur = null, yubiHashedPasswordNew = null) {
-        const { currentPwdHash, setPassword, generateAlert, t } = this.props;
+        const { generateAlert, t } = this.props;
         const { newPassword } = this.state;
+        const salt = await getSalt();
 
         if (this.shouldStartYubikey(yubiHashedPasswordNew === null)) {
             return;
         }
 
-        const salt = await getSalt();
-        const passwordNewHash =
-            yubiHashedPasswordNew !== null ? yubiHashedPasswordNew : await generatePasswordHash(newPassword, salt);
-        const passwordCurrentHash = yubiHashedPasswordCur !== null ? yubiHashedPasswordCur : currentPwdHash;
+        const newPwdHash = yubiHashedPasswordNew !== null ? yubiHashedPasswordNew : await generatePasswordHash(newPassword, salt);
 
-        changePassword(passwordCurrentHash, passwordNewHash, salt)
+        changePassword(global.passwordHash, newPwdHash, salt)
             .then(() => {
-                setPassword(passwordNewHash);
+                global.passwordHash = newPwdHash;
                 generateAlert('success', t('passwordUpdated'), t('passwordUpdatedExplanation'));
                 this.props.setSetting('securitySettings');
             })
             .catch(() => generateAlert('error', t('somethingWentWrong'), t('somethingWentWrongTryAgain')));
     }
 
+
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { currentPassword, newPassword } = this.state;
+        const { newPassword } = this.state;
         const { t, yubikeySettings } = this.props;
         try {
             const passwordNewHash = await hash(newPassword);
-            const passwordCurrentHash = await hash(currentPassword);
+            const passwordCurrentHash = global.passwordHash;
 
             const aPwYubiHashedCurrent = await this.doChallengeResponseThenSaltedHash(passwordCurrentHash);
             const aPwYubiHashedNew = await this.doChallengeResponseThenSaltedHash(passwordNewHash);
@@ -164,15 +169,36 @@ class ChangePassword extends Component {
      * @method isPasswordChangeValid
      */
     async isPasswordChangeValid() {
-        const { t, currentPwdHash, generateAlert, is2FAEnabledYubikey } = this.props;
-        const currentPasswordHash = await hash(this.state.currentPassword);
-        if (!isEqual(currentPwdHash, currentPasswordHash) && !is2FAEnabledYubikey) {
+        const { t, generateAlert } = this.props;
+        if (isEmpty(this.state.currentPassword)) {
+            return this.props.generateAlert('error', t('login:emptyPassword'), t('emptyPasswordExplanation'));
+        } else if (!isEqual(global.passwordHash, await hash(this.state.currentPassword))) {
             return generateAlert('error', t('incorrectPassword'), t('incorrectPasswordExplanation'));
-        } else if (this.state.newPassword === this.state.currentPassword) {
+        } else if (isEqual(this.state.newPassword, this.state.currentPassword)) {
             return generateAlert('error', t('oldPassword'), t('oldPasswordExplanation'));
         }
         this.passwordFields.checkPassword();
     }
+
+//
+//
+//     async isPasswordChangeValid() {
+// <<<<<<< HEAD
+//         const { t, currentPwdHash, generateAlert, is2FAEnabledYubikey } = this.props;
+//         const currentPasswordHash = await hash(this.state.currentPassword);
+//         if (!isEqual(currentPwdHash, currentPasswordHash) && !is2FAEnabledYubikey) {
+// =======
+//         const { t, generateAlert } = this.props;
+//         if (isEmpty(this.state.currentPassword)) {
+//             return this.props.generateAlert('error', t('login:emptyPassword'), t('emptyPasswordExplanation'));
+//         } else if (!isEqual(global.passwordHash, await hash(this.state.currentPassword))) {
+// >>>>>>> develop
+//             return generateAlert('error', t('incorrectPassword'), t('incorrectPasswordExplanation'));
+//         } else if (isEqual(this.state.newPassword, this.state.currentPassword)) {
+//             return generateAlert('error', t('oldPassword'), t('oldPasswordExplanation'));
+//         }
+//         this.passwordFields.checkPassword();
+//     }
 
     render() {
         const { currentPassword, newPassword, newPasswordReentry } = this.state;
@@ -183,30 +209,24 @@ class ChangePassword extends Component {
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.container}>
                     <View style={styles.topContainer}>
-                        <InfoBox
-                            body={theme.body}
-                            text={
-                                <View>
-                                    <Text style={[styles.infoText, textColor]}>{t('ensureStrongPassword')}</Text>
-                                </View>
-                            }
-                        />
-                        <View style={{ flex: 0.2 }} />
+                        <InfoBox>
+                            <Text style={[styles.infoText, textColor]}>{t('ensureStrongPassword')}</Text>
+                        </InfoBox>
                         <CustomTextInput
                             onRef={(c) => {
                                 this.currentPassword = c;
                             }}
                             value={currentPassword}
                             label={t('currentPassword')}
-                            onChangeText={(password) => this.setState({ currentPassword: password })}
+                            onValidTextChange={(password) => this.setState({ currentPassword: password })}
                             returnKeyType="next"
                             theme={theme}
                             widget="empty"
-                            containerStyle={{ width: Styling.contentWidth }}
                             autoCapitalize="none"
                             autoCorrect={false}
                             enablesReturnKeyAutomatically
                             secureTextEntry
+                            isPasswordInput
                         />
                         <PasswordFields
                             onRef={(ref) => {
@@ -256,14 +276,13 @@ class ChangePassword extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    currentPwdHash: state.wallet.password,
-    theme: state.settings.theme,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
+    yubikeyAndroidReaderMode: state.settings.yubikeyAndroidReaderMode,
+    theme: getThemeFromState(state),
 });
 
 const mapDispatchToProps = {
-    setPassword,
     setSetting,
     generateAlert,
 };

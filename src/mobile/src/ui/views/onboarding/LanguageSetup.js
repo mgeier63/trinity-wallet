@@ -1,8 +1,9 @@
 import React, { Component } from 'react';
 import { StyleSheet, View, TouchableWithoutFeedback, Image } from 'react-native';
 import PropTypes from 'prop-types';
+import timer from 'react-native-timer';
 import { withNamespaces } from 'react-i18next';
-import { Navigation } from 'react-native-navigation';
+import { navigator } from 'libs/navigation';
 import SplashScreen from 'react-native-splash-screen';
 import { getDeviceLocale } from 'react-native-device-info';
 import { I18N_LOCALE_LABELS, getLabelFromLocale, getLocaleFromLabel, detectLocale } from 'shared-modules/libs/i18n';
@@ -10,8 +11,9 @@ import { setLanguage, setLocale } from 'shared-modules/actions/settings';
 import helloBackImagePath from 'shared-modules/images/hello-back.png';
 import { connect } from 'react-redux';
 import { setSetting } from 'shared-modules/actions/wallet';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import i18next from 'shared-modules/libs/i18next';
-import WithBackPressCloseApp from 'ui/components/BackPressCloseApp';
+import AnimatedComponent from 'ui/components/AnimatedComponent';
 import { width, height } from 'libs/dimensions';
 import { isAndroid } from 'libs/device';
 import DropdownComponent from 'ui/components/Dropdown';
@@ -42,7 +44,6 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     helloBackground: {
-        position: 'absolute',
         width,
         height: width / 0.95,
     },
@@ -80,52 +81,25 @@ class LanguageSetup extends Component {
         }
     }
 
+    componentWillUnmount() {
+        timer.clearTimeout('delayReset');
+    }
     onNextPress() {
-        const { theme: { body, bar }, acceptedTerms, acceptedPrivacy, forceUpdate } = this.props;
+        const { forceUpdate } = this.props;
         if (forceUpdate) {
             return;
         }
-        Navigation.push('appStack', {
-            component: {
-                name: this.getNextRoute(),
-                options: {
-                    animations: {
-                        push: {
-                            enable: false,
-                        },
-                        pop: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: !acceptedTerms || !acceptedPrivacy ? bar.bg : body.bg,
-                    },
-                },
-            },
-        });
+        navigator.push(this.getNextRoute());
     }
 
     getNextRoute() {
         const { acceptedTerms, acceptedPrivacy } = this.props;
-
         let nextRoute = 'walletSetup';
-
         if (!acceptedTerms && !acceptedPrivacy) {
             nextRoute = 'termsAndConditions';
         } else if (acceptedTerms && !acceptedPrivacy) {
             nextRoute = 'privacyPolicy';
         }
-
         return nextRoute;
     }
 
@@ -149,28 +123,54 @@ class LanguageSetup extends Component {
             >
                 <View style={{ flex: 1, backgroundColor: body.bg }}>
                     <View style={styles.container}>
-                        <Image style={styles.helloBackground} source={helloBackImagePath} />
+                        <AnimatedComponent
+                            animationInType={['fadeIn']}
+                            animationOutType={['fadeOut']}
+                            delay={0}
+                            style={[styles.helloBackground, { position: 'absolute' }]}
+                        >
+                            <Image style={styles.helloBackground} source={helloBackImagePath} />
+                        </AnimatedComponent>
                         <View style={styles.topContainer}>
-                            <Icon name="iota" size={width / 8} color={body.color} />
+                            <AnimatedComponent
+                                animationInType={['fadeIn']}
+                                animationOutType={['fadeOut', 'slideOutLeft']}
+                                delay={200}
+                            >
+                                <Icon name="iota" size={width / 8} color={body.color} />
+                            </AnimatedComponent>
                         </View>
                         <View style={styles.midContainer}>
-                            <View style={{ flex: 0.5 }} />
-                            <DropdownComponent
-                                onRef={(c) => {
-                                    this.dropdown = c;
-                                }}
-                                title={t('language')}
-                                defaultOption={defaultLanguageLabel}
-                                options={I18N_LOCALE_LABELS}
-                                saveSelection={(language) => this.clickDropdownItem(language)}
-                            />
+                            <AnimatedComponent
+                                style={{ position: 'absolute', height: height / 1.3 }}
+                                animationInType={['fadeIn']}
+                                animationOutType={['fadeOut', 'slideOutLeft']}
+                                delay={100}
+                            >
+                                <View style={{ flex: 0.5 }} />
+                                <DropdownComponent
+                                    onRef={(c) => {
+                                        this.dropdown = c;
+                                    }}
+                                    title={t('language')}
+                                    value={defaultLanguageLabel}
+                                    options={I18N_LOCALE_LABELS}
+                                    saveSelection={(language) => this.clickDropdownItem(language)}
+                                />
+                            </AnimatedComponent>
                         </View>
                         <View style={styles.bottomContainer}>
-                            <SingleFooterButton
-                                onButtonPress={() => this.onNextPress()}
-                                testID="languageSetup-next"
-                                buttonText={t('letsGetStarted')}
-                            />
+                            <AnimatedComponent
+                                animationInType={['fadeIn']}
+                                animationOutType={['fadeOut', 'slideOutLeft']}
+                                delay={0}
+                            >
+                                <SingleFooterButton
+                                    onButtonPress={() => this.onNextPress()}
+                                    testID="languageSetup-next"
+                                    buttonText={t('letsGetStarted')}
+                                />
+                            </AnimatedComponent>
                         </View>
                     </View>
                 </View>
@@ -180,7 +180,7 @@ class LanguageSetup extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     acceptedPrivacy: state.settings.acceptedPrivacy,
     acceptedTerms: state.settings.acceptedTerms,
     forceUpdate: state.wallet.forceUpdate,
@@ -192,6 +192,4 @@ const mapDispatchToProps = {
     setLocale,
 };
 
-export default WithBackPressCloseApp()(
-    withNamespaces(['languageSetup', 'global'])(connect(mapStateToProps, mapDispatchToProps)(LanguageSetup)),
-);
+export default withNamespaces(['languageSetup', 'global'])(connect(mapStateToProps, mapDispatchToProps)(LanguageSetup));

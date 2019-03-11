@@ -9,13 +9,19 @@ import size from 'lodash/size';
 import URL from 'url-parse';
 import { BigNumber } from 'bignumber.js';
 import { iota } from './index';
-import { isNodeSynced } from './extendedApi';
+import { isNodeHealthy } from './extendedApi';
 import { NODELIST_URL } from '../../config';
 import Errors from '../errors';
 
 export const MAX_SEED_LENGTH = 81;
 
+export const MAX_SEED_TRITS = MAX_SEED_LENGTH * 3;
+
+export const ADDRESS_LENGTH_WITHOUT_CHECKSUM = MAX_SEED_LENGTH;
+
 export const ADDRESS_LENGTH = 90;
+
+export const CHECKSUM_LENGTH = ADDRESS_LENGTH - ADDRESS_LENGTH_WITHOUT_CHECKSUM;
 
 export const VALID_SEED_REGEX = /^[A-Z9]+$/;
 
@@ -192,6 +198,16 @@ export const isValidAddress = (address) => {
 };
 
 /**
+ * Checks if the last trit is 0
+ *
+ * @method isLastTritZero
+ * @param {string} address
+ *
+ * @returns {boolean}
+ */
+export const isLastTritZero = (address) => !/[E-V]/.test(address.slice(80, 81));
+
+/**
  * Checks if provided IOTA message is valid
  *
  * @method isValidMessage
@@ -299,6 +315,7 @@ export const parseAddress = (input) => {
  * Retry IOTA api calls on different nodes
  *
  * @method withRetriesOnDifferentNodes
+ *
  * @param {array} nodes
  * @param {array|function} [failureCallbacks]
  *
@@ -318,6 +335,10 @@ export const withRetriesOnDifferentNodes = (nodes, failureCallbacks) => {
             return promiseFunc(nodes[attempt])(...args)
                 .then((result) => ({ node: nodes[attempt], result }))
                 .catch((err) => {
+                    // Abort retries on user cancalled Ledger action
+                    if (err === Errors.LEDGER_CANCELLED) {
+                        throw new Error(Errors.LEDGER_CANCELLED);
+                    }
                     // If a function is passed as failure callback
                     // Just trigger it once.
                     if (isFunction(failureCallbacks)) {
@@ -391,13 +412,13 @@ export const getRandomNodes = (nodes, size = 5, blacklisted = []) => {
 /**
  * Throws an error if a node is not synced.
  *
- * @method throwIfNodeNotSynced
+ * @method throwIfNodeNotHealthy
  * @param {string} provider
  *
  * @returns {Promise<boolean>}
  */
-export const throwIfNodeNotSynced = (provider) => {
-    return isNodeSynced(provider).then((isSynced) => {
+export const throwIfNodeNotHealthy = (provider) => {
+    return isNodeHealthy(provider).then((isSynced) => {
         if (!isSynced) {
             throw new Error(Errors.NODE_NOT_SYNCED);
         }

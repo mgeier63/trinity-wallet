@@ -5,10 +5,12 @@ import { connect } from 'react-redux';
 import { withI18n } from 'react-i18next';
 import { NavLink } from 'react-router-dom';
 
-import { shorten, capitalize } from 'libs/helpers';
+import { shorten, capitalize } from 'libs/iota/converter';
 import { formatIota } from 'libs/iota/utils';
+import { accumulateBalance } from 'libs/iota/addresses';
 
 import { clearWalletData, setSeedIndex } from 'actions/wallet';
+import { getAccountNamesFromState } from 'selectors/accounts';
 
 import Logo from 'ui/components/Logo';
 import Icon from 'ui/components/Icon';
@@ -22,6 +24,8 @@ import css from './index.scss';
  */
 class Sidebar extends React.PureComponent {
     static propTypes = {
+        /** Account names for wallet */
+        accountNames: PropTypes.array.isRequired,
         /** @ignore */
         location: PropTypes.object,
         /** @ignore */
@@ -48,23 +52,11 @@ class Sidebar extends React.PureComponent {
 
     componentDidMount() {
         Electron.updateMenu('enabled', !this.props.isBusy);
-        Electron.garbageCollect();
-    }
-
-    componentWillReceiveProps(nextProps) {
-        if (this.props.isBusy !== nextProps.isBusy) {
-            Electron.updateMenu('enabled', !nextProps.isBusy);
-            if (!nextProps.isBusy) {
-                Electron.garbageCollect();
-            }
-        }
     }
 
     accountSettings = (e, index) => {
         e.stopPropagation();
-
-        this.props.setSeedIndex(index);
-        this.props.history.push('/account/name');
+        this.props.history.push(`/settings/account/name/${index}`);
     };
 
     toggleLogout = () => {
@@ -82,7 +74,8 @@ class Sidebar extends React.PureComponent {
     };
 
     render() {
-        const { accounts, seedIndex, setSeedIndex, t, location, history, isBusy } = this.props;
+        // Use accountNames prop for displaying account names here because accountNames prop preserves the account index
+        const { accountNames, accounts, seedIndex, setSeedIndex, t, location, history, isBusy } = this.props;
         const { modalLogout } = this.state;
 
         return (
@@ -98,7 +91,7 @@ class Sidebar extends React.PureComponent {
                         </a>
                         <ul>
                             <Scrollbar>
-                                {Object.keys(accounts.accountInfo).map((account, index) => {
+                                {accountNames.map((account, index) => {
                                     return (
                                         <a
                                             aria-current={index === seedIndex}
@@ -109,7 +102,15 @@ class Sidebar extends React.PureComponent {
                                             }}
                                         >
                                             <strong>{shorten(account, 16)}</strong>
-                                            <small>{formatIota(accounts.accountInfo[account].balance)}</small>
+                                            <small>
+                                                {formatIota(
+                                                    accumulateBalance(
+                                                        accounts.accountInfo[account].addressData.map(
+                                                            (addressData) => addressData.balance,
+                                                        ),
+                                                    ),
+                                                )}
+                                            </small>
                                             <div onClick={(e) => this.accountSettings(e, index)}>
                                                 <Icon icon="settingsAlt" size={16} />
                                             </div>
@@ -149,6 +150,7 @@ class Sidebar extends React.PureComponent {
 }
 
 const mapStateToProps = (state) => ({
+    accountNames: getAccountNamesFromState(state),
     accounts: state.accounts,
     seedIndex: state.wallet.seedIndex,
     isBusy:

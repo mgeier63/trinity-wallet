@@ -1,5 +1,5 @@
 import React, { PureComponent } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import PropTypes from 'prop-types';
 import { height } from 'libs/dimensions';
 import { Styling } from 'ui/theme/general';
@@ -29,7 +29,7 @@ class CtaButton extends PureComponent {
         /** Button text color */
         secondaryCtaColor: PropTypes.string.isRequired,
         /** Button text */
-        text: PropTypes.string.isRequired,
+        text: PropTypes.string,
         /** Button width */
         ctaWidth: PropTypes.number,
         /** Button height */
@@ -38,20 +38,35 @@ class CtaButton extends PureComponent {
         fontSize: PropTypes.number,
         /** Id for automated screenshots */
         testID: PropTypes.string,
+        /** Determines whether to display activity spinner */
+        displayActivityIndicator: PropTypes.bool,
+        /** Button container's style */
+        containerStyle: PropTypes.object,
     };
 
     static defaultProps = {
         fontSize: Styling.fontSize3,
         ctaWidth: Styling.contentWidth,
-        ctaHeight: height / 14,
+        ctaHeight: height / 11,
         testID: '',
+        displayActivityIndicator: false,
     };
 
     render() {
-        const { ctaColor, secondaryCtaColor, text, ctaWidth, ctaHeight, testID, fontSize } = this.props;
+        const {
+            ctaColor,
+            secondaryCtaColor,
+            text,
+            ctaWidth,
+            ctaHeight,
+            testID,
+            fontSize,
+            displayActivityIndicator,
+            containerStyle,
+        } = this.props;
 
         return (
-            <View style={styles.ctaButtonContainer}>
+            <View style={[styles.ctaButtonContainer, containerStyle]}>
                 <TouchableOpacity
                     onPress={() => {
                         this.props.onPress();
@@ -66,7 +81,9 @@ class CtaButton extends PureComponent {
                             { height: ctaHeight },
                         ]}
                     >
-                        <Text style={[styles.ctaText, { color: secondaryCtaColor, fontSize }]}>{text}</Text>
+                        {(displayActivityIndicator && <ActivityIndicator color={secondaryCtaColor} size="small" />) || (
+                            <Text style={[styles.ctaText, { color: secondaryCtaColor, fontSize }]}>{text}</Text>
+                        )}
                     </View>
                 </TouchableOpacity>
             </View>

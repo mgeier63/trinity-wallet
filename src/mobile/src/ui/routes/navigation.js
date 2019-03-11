@@ -2,8 +2,9 @@ import { Navigation } from 'react-native-navigation';
 import withSafeAreaView from 'ui/components/SafeAreaView';
 import withDropdownAlert from 'ui/components/WithDropdownAlert';
 import withModal from 'ui/components/ModalComponent';
-import withRouteMonitor from 'ui/components/RouteMonitor';
 import withStatusBar from 'ui/components/WithStatusBar';
+import withBackPress from 'ui/components/BackPress';
+import withKeyboardMonitor from 'ui/components/KeyboardMonitor';
 import Home from 'ui/views/wallet/Home';
 import Loading from 'ui/views/wallet/Loading';
 import NewSeedSetup from 'ui/views/onboarding/NewSeedSetup';
@@ -25,22 +26,27 @@ import TwoFactorSetupYubikeyComponent from 'ui/views/wallet/TwoFactorSetupYubike
 import TwoFactorSetupAddKeyComponent from 'ui/views/wallet/TwoFactorSetupAddKey';
 import TwoFactorSetupEnterToken from 'ui/views/wallet/TwoFactorSetupEnterToken';
 import Disable2FA from 'ui/views/wallet/Disable2FA';
-import FingerprintSetup from 'ui/views/wallet/FingerprintSetup';
+import BiometricAuthentication from 'ui/views/wallet/BiometricAuthentication';
 import TermsAndConditions from 'ui/views/onboarding/TermsAndConditions';
 import PrivacyPolicy from 'ui/views/onboarding/PrivacyPolicy';
 import ForceChangePassword from 'ui/views/wallet/ForceChangePassword';
 import SeedVaultBackupComponent from 'ui/views/onboarding/SeedVaultBackup';
-import { isIPhoneX } from 'libs/device';
+import MigrationComponent from 'ui/components/Migration';
+import { isIPhoneX, isAndroid } from 'libs/device';
 
 function applyHOCs(screen) {
-    const withHOCs = (c) => withDropdownAlert(withStatusBar(withModal(withRouteMonitor(c))));
+    const withHOCs = (c) => withKeyboardMonitor(withDropdownAlert(withStatusBar(withModal(c))));
     if (isIPhoneX) {
         return withHOCs(withSafeAreaView(screen));
+    }
+    if (isAndroid) {
+        return withBackPress(withHOCs(screen));
     }
     return withHOCs(screen);
 }
 
 export default function registerScreens(store, Provider) {
+    Navigation.registerComponentWithRedux('migration', () => applyHOCs(MigrationComponent), Provider, store);
     Navigation.registerComponentWithRedux('home', () => applyHOCs(Home), Provider, store);
     Navigation.registerComponentWithRedux('loading', () => applyHOCs(Loading), Provider, store);
     Navigation.registerComponentWithRedux('newSeedSetup', () => applyHOCs(NewSeedSetup), Provider, store);
@@ -97,7 +103,12 @@ export default function registerScreens(store, Provider) {
         store,
     );
     Navigation.registerComponentWithRedux('disable2FA', () => applyHOCs(Disable2FA), Provider, store);
-    Navigation.registerComponentWithRedux('fingerprintSetup', () => applyHOCs(FingerprintSetup), Provider, store);
+    Navigation.registerComponentWithRedux(
+        'biometricAuthentication',
+        () => applyHOCs(BiometricAuthentication),
+        Provider,
+        store,
+    );
     Navigation.registerComponentWithRedux('termsAndConditions', () => applyHOCs(TermsAndConditions), Provider, store);
     Navigation.registerComponentWithRedux('privacyPolicy', () => applyHOCs(PrivacyPolicy), Provider, store);
     Navigation.registerComponentWithRedux('forceChangePassword', () => applyHOCs(ForceChangePassword), Provider, store);

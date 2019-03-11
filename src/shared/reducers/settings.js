@@ -2,8 +2,9 @@ import merge from 'lodash/merge';
 import union from 'lodash/union';
 import sortBy from 'lodash/sortBy';
 import { ActionTypes } from '../actions/settings';
+import { ActionTypes as MigrationsActionTypes } from '../actions/migrations';
 import { defaultNode as node, nodes } from '../config';
-import themes from '../themes/themes';
+import { availableCurrencies } from '../libs/currency';
 
 const initialState = {
     /**
@@ -38,41 +39,7 @@ const initialState = {
     /**
      * Wallet's available currencies
      */
-    availableCurrencies: [
-        'USD',
-        'GBP',
-        'EUR',
-        'AUD',
-        'BGN',
-        'BRL',
-        'CAD',
-        'CHF',
-        'CNY',
-        'CZK',
-        'DKK',
-        'HKD',
-        'HRK',
-        'HUF',
-        'IDR',
-        'ILS',
-        'INR',
-        'ISK',
-        'JPY',
-        'KRW',
-        'MXN',
-        'MYR',
-        'NOK',
-        'NZD',
-        'PHP',
-        'PLN',
-        'RON',
-        'RUB',
-        'SEK',
-        'SGD',
-        'THB',
-        'TRY',
-        'ZAR',
-    ],
+    availableCurrencies,
     /**
      * Conversion rate for IOTA token
      */
@@ -81,10 +48,6 @@ const initialState = {
      * Active theme name
      */
     themeName: 'Default',
-    /**
-     * Active theme object
-     */
-    theme: themes.Default,
     /**
      * Determines if the wallet has randomised node on initial setup.
      *
@@ -114,20 +77,20 @@ const initialState = {
      * Determines if user has enabled two factor OTP based authentication on the wallet
      */
     is2FAEnabled: false,
-    /**
-     * Determines if user has enabled two factor YubiKey based authentication on the wallet
-     * NOTE: This and *is2FAEnabled* are mutually exclusive, they can not be enabled at the same time.
-     * NOTE: This shold be refactored into a single tri-state like (enum based) setting,
-     * NOTE: but that would require a settings-database migration!
-     */
-    is2FAEnabledYubikey: false,
-    /**
-     * Determines yubikey specific settings
-     */
-    yubikey: {
-        slot: 2,
-        androidReaderMode: true,
-    },
+    // /**
+    //  * Determines if user has enabled two factor YubiKey based authentication on the wallet
+    //  * NOTE: This and *is2FAEnabled* are mutually exclusive, they can not be enabled at the same time.
+    //  * NOTE: This shold be refactored into a single tri-state like (enum based) setting,
+    //  * NOTE: but that would require a settings-database migration!
+    //  */
+    // is2FAEnabledYubikey: false,
+    // /**
+    //  * Determines yubikey specific settings
+    //  */
+    // yubikey: {
+    //     slot: 2,
+    //     androidReaderMode: true,
+    // },
     /**
      * Determines if user has enabled finger print authentication
      */ isFingerprintEnabled: false,
@@ -160,6 +123,10 @@ const initialState = {
         messages: true,
     },
     /**
+     * Determines the status of AsyncStorage to realm migration
+     */
+    completedMigration: false,
+    /*
      * Desktop: Use system proxy settings
      */
     ignoreProxy: false,
@@ -167,6 +134,11 @@ const initialState = {
 
 const settingsReducer = (state = initialState, action) => {
     switch (action.type) {
+        case ActionTypes.SET_LOCK_SCREEN_TIMEOUT:
+            return {
+                ...state,
+                lockScreenTimeout: action.payload,
+            };
         case ActionTypes.SET_REMOTE_POW:
             return {
                 ...state,
@@ -181,11 +153,6 @@ const settingsReducer = (state = initialState, action) => {
             return {
                 ...state,
                 autoNodeSwitching: action.payload === undefined ? !state.autoNodeSwitching : action.payload,
-            };
-        case ActionTypes.SET_LOCK_SCREEN_TIMEOUT:
-            return {
-                ...state,
-                lockScreenTimeout: action.payload,
             };
         case ActionTypes.SET_LOCALE:
             return {
@@ -224,11 +191,6 @@ const settingsReducer = (state = initialState, action) => {
                 ...state,
                 mode: action.payload,
             };
-        case ActionTypes.SET_THEME:
-            return {
-                ...state,
-                theme: action.payload,
-            };
         case ActionTypes.SET_LANGUAGE:
             return {
                 ...state,
@@ -247,8 +209,7 @@ const settingsReducer = (state = initialState, action) => {
         case ActionTypes.UPDATE_THEME:
             return {
                 ...state,
-                theme: action.theme,
-                themeName: action.themeName,
+                themeName: action.payload,
             };
         case ActionTypes.SET_RANDOMLY_SELECTED_NODE:
             return {
@@ -306,6 +267,7 @@ const settingsReducer = (state = initialState, action) => {
         case ActionTypes.SET_BYTETRIT_INFO:
             return {
                 ...state,
+                // FIXME: byteTritInfo not defined in initial state.
                 byteTritInfo: action.payload,
             };
         case ActionTypes.SET_TRAY:
@@ -321,19 +283,30 @@ const settingsReducer = (state = initialState, action) => {
                     [action.payload.type]: action.payload.enabled,
                 },
             };
+        case MigrationsActionTypes.SET_REALM_MIGRATION_STATUS:
+            return {
+                ...state,
+                completedMigration: action.payload,
+            };
         case ActionTypes.SET_PROXY:
             return {
                 ...state,
                 ignoreProxy: action.payload,
             };
-        case ActionTypes.SET_YUBIKEY:
+        case ActionTypes.RESET_NODES_LIST:
             return {
                 ...state,
-                yubikey: {
-                    ...state.yubikey,
-                    slot: action.payload.slot,
-                    androidReaderMode: action.payload.androidReaderMode,
-                },
+                nodes: [],
+            };
+        case ActionTypes.SET_YUBIKEY_SLOT:
+            return {
+                ...state,
+                yubikeySlot: action.payload,
+            };
+        case ActionTypes.SET_YUBIKEY_ANDROIDREADERMODE:
+            return {
+                ...state,
+                yubikeyAndroidReaderMode: action.payload,
             };
     }
 

@@ -1,22 +1,28 @@
 import { YubikeyApi, YUBIKEY_STATE } from './YubikeyApi';
 
 export class YubikeyMixin {
-    constructor(target, yubikeySettings, yubikeybackend, splashTimeout) {
+    constructor(
+        target,
+        yubikeySlot,
+        yubikeyAndroidReaderMode,
+        getOrWaitForBackend,
+        cancelWaitForBackend,
+        splashTimeout,
+    ) {
         target.state = { ...target.state, yubikeyState: YUBIKEY_STATE.INACTIVE };
         this.target = target;
 
         this.doStartYubikey = () => {
             target.setState({ yubikeyState: YUBIKEY_STATE.WAITING });
-            yubikeybackend
-                .getOrWaitForBackend(yubikeySettings.androidReaderMode)
+            getOrWaitForBackend(yubikeyAndroidReaderMode)
                 .then(
                     async (backend) => {
                         target.setState({ yubikeyState: YUBIKEY_STATE.COMMUNICATING });
-                        this.yubikeyApi = new YubikeyApi(backend, yubikeySettings.slot === 2);
+                        this.yubikeyApi = new YubikeyApi(backend, yubikeySlot === 2);
                         try {
                             await target.doWithYubikey(this.yubikeyApi, this.postResultDelayed, this.postError);
                         } finally {
-                            yubikeybackend.cancelWaitForBackend();
+                            cancelWaitForBackend();
                             if (this.yubikeyApi !== null) {
                                 this.yubikeyApi.close();
                             }
@@ -38,7 +44,7 @@ export class YubikeyMixin {
         };
 
         this.doStopYubikey = () => {
-            yubikeybackend.cancelWaitForBackend();
+            cancelWaitForBackend();
             target.setState({ yubikeyState: YUBIKEY_STATE.INACTIVE });
         };
 

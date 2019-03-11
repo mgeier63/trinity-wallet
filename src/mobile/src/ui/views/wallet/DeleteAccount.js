@@ -1,3 +1,4 @@
+import isEmpty from 'lodash/isEmpty';
 import isEqual from 'lodash/isEqual';
 import React, { Component } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, Keyboard } from 'react-native';
@@ -7,7 +8,7 @@ import { generateAlert } from 'shared-modules/actions/alerts';
 import { connect } from 'react-redux';
 import { withNamespaces } from 'react-i18next';
 import { getSelectedAccountName, getSelectedAccountMeta } from 'shared-modules/selectors/accounts';
-import { shouldPreventAction } from 'shared-modules/selectors/global';
+import { shouldPreventAction, getThemeFromState } from 'shared-modules/selectors/global';
 import { deleteAccount } from 'shared-modules/actions/accounts';
 import { toggleModalActivity } from 'shared-modules/actions/ui';
 import Fonts from 'ui/theme/fonts';
@@ -42,6 +43,7 @@ const styles = StyleSheet.create({
     },
     textContainer: {
         flex: 2.5,
+        alignItems: 'center',
         justifyContent: 'space-around',
     },
     itemLeft: {
@@ -74,12 +76,12 @@ const styles = StyleSheet.create({
     infoBoxText: {
         fontFamily: Fonts.secondary,
         fontSize: Styling.fontSize3,
-        textAlign: 'left',
+        textAlign: 'center',
     },
     infoBoxTitleText: {
         fontFamily: Fonts.secondary,
         fontSize: Styling.fontSize4,
-        textAlign: 'left',
+        textAlign: 'center',
     },
     warningText: {
         fontFamily: Fonts.secondary,
@@ -94,8 +96,6 @@ class DeleteAccount extends Component {
     static propTypes = {
         /** @ignore */
         setSetting: PropTypes.func.isRequired,
-        /** @ignore */
-        password: PropTypes.object.isRequired,
         /** @ignore */
         deleteAccount: PropTypes.func.isRequired,
         /** @ignore */
@@ -118,7 +118,9 @@ class DeleteAccount extends Component {
         // eslint-disable-next-line react/no-unused-prop-types
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
+        /** @ignore */
+        yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
     };
 
     constructor(props) {
@@ -126,14 +128,18 @@ class DeleteAccount extends Component {
 
         this.state = {
             pressedContinue: false,
-            password: '',
+            password: null,
         };
 
-        applyYubikeyMixinMobile(this, props.yubikeySettings);
+        applyYubikeyMixinMobile(this, props.yubikeySlot, props.yubikeyAndroidReaderMode);
     }
 
     componentDidMount() {
         leaveNavigationBreadcrumb('DeleteAccount');
+    }
+
+    componentWillUnmount() {
+        delete this.state.password;
     }
 
     /**
@@ -150,20 +156,18 @@ class DeleteAccount extends Component {
     }
 
     /**
-     * Displays a confirmation modal for account deletion if user entered password is correct/valid
+     * Deletes account if user entered correct/valid password
      * Otherwise generates an alert
      *
      * @method onContinuePress
      */
     async onContinuePress(yubikeyHashedPassword = null) {
-        const { password, t } = this.props;
+        const { t, isAutoPromoting } = this.props;
         if (!this.state.pressedContinue) {
             return this.setState({ pressedContinue: true });
         }
-
-        if (!this.state.password || this.state.password.length === 0) {
-            this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
-            return;
+        if (isEmpty(this.state.password)) {
+            return this.props.generateAlert('error', t('login:emptyPassword'), t('emptyPasswordExplanation'));
         }
 
         //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
@@ -176,44 +180,20 @@ class DeleteAccount extends Component {
         if (yubikeyHashedPassword !== null) {
             pwdHash = yubikeyHashedPassword;
         } else {
-            try {
-                pwdHash = await hash(this.state.password);
-            } catch (err) {
-                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
-            }
+            pwdHash = await hash(this.state.password);
         }
 
-        if (isEqual(password, pwdHash)) {
-            return this.showModal();
+        if (isEqual(global.passwordHash, pwdHash)) {
+            if (isAutoPromoting || this.props.shouldPreventAction) {
+                return this.props.generateAlert('error', t('global:pleaseWait'), t('global:pleaseWaitExplanation'));
+            }
+            return this.delete();
         }
         return this.props.generateAlert(
             'error',
             t('global:unrecognisedPassword'),
             t('global:unrecognisedPasswordExplanation'),
         );
-    }
-
-    /**
-     * Deletes account
-     *
-     * @method onYesPress
-     */
-    onYesPress() {
-        const { t, isAutoPromoting } = this.props;
-        if (isAutoPromoting || this.props.shouldPreventAction) {
-            return this.props.generateAlert('error', t('global:pleaseWait'), t('global:pleaseWaitExplanation'));
-        }
-        this.hideModal();
-        this.delete();
-    }
-
-    /**
-     * Hides account deletion confirmation modal
-     *
-     * @method onNoPress
-     */
-    onNoPress() {
-        this.hideModal();
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
@@ -252,8 +232,8 @@ class DeleteAccount extends Component {
      * @method delete
      */
     async delete() {
-        const { password, selectedAccountName, selectedAccountMeta } = this.props;
-        const seedStore = new SeedStore[selectedAccountMeta.type](password, selectedAccountName);
+        const { selectedAccountName, selectedAccountMeta } = this.props;
+        const seedStore = await new SeedStore[selectedAccountMeta.type](global.passwordHash, selectedAccountName);
         await seedStore.removeAccount();
         this.props.deleteAccount(selectedAccountName);
     }
@@ -273,6 +253,7 @@ class DeleteAccount extends Component {
         this.props.toggleModalActivity();
     };
 
+
     render() {
         const { t, theme, selectedAccountName } = this.props;
 
@@ -287,6 +268,7 @@ class DeleteAccount extends Component {
                 </TouchableWithoutFeedback>
             );
         }
+
         return (
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.container}>
@@ -294,22 +276,17 @@ class DeleteAccount extends Component {
                         <View style={{ flex: 0.5 }} />
                         {!this.state.pressedContinue && (
                             <View style={styles.textContainer}>
-                                <InfoBox
-                                    body={theme.body}
-                                    text={
-                                        <View>
-                                            <Text style={[styles.infoBoxTitleText, textColor]}>
-                                                {t('global:account')}: {selectedAccountName}
-                                            </Text>
-                                            <Text style={[styles.infoBoxText, textColor, { paddingTop: height / 30 }]}>
-                                                {t('areYouSure')}
-                                            </Text>
-                                            <Text style={[styles.infoBoxText, textColor, { paddingTop: height / 40 }]}>
-                                                {t('yourSeedWillBeRemoved')}
-                                            </Text>
-                                        </View>
-                                    }
-                                />
+                                <InfoBox>
+                                    <Text style={[styles.infoBoxTitleText, textColor]}>
+                                        {t('global:account')}: {selectedAccountName}
+                                    </Text>
+                                    <Text style={[styles.infoBoxText, textColor, { paddingTop: height / 30 }]}>
+                                        {t('areYouSure')}
+                                    </Text>
+                                    <Text style={[styles.infoBoxText, textColor, { paddingTop: height / 40 }]}>
+                                        {t('yourSeedWillBeRemoved')}
+                                    </Text>
+                                </InfoBox>
                             </View>
                         )}
                         {this.state.pressedContinue && (
@@ -320,8 +297,7 @@ class DeleteAccount extends Component {
                                 <Text style={[styles.infoText, textColor]}>{t('enterPassword')}</Text>
                                 <CustomTextInput
                                     label={t('global:password')}
-                                    onChangeText={(password) => this.setState({ password })}
-                                    containerStyle={{ width: Styling.contentWidth }}
+                                    onValidTextChange={(password) => this.setState({ password })}
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     enablesReturnKeyAutomatically
@@ -330,6 +306,7 @@ class DeleteAccount extends Component {
                                     theme={theme}
                                     secureTextEntry
                                     value={this.state.password}
+                                    isPasswordInput
                                 />
                             </View>
                         )}
@@ -350,7 +327,9 @@ class DeleteAccount extends Component {
                             hitSlop={{ top: height / 55, bottom: height / 55, left: width / 55, right: width / 55 }}
                         >
                             <View style={styles.itemRight}>
-                                <Text style={[styles.titleTextRight, textColor]}>{t('global:continue')}</Text>
+                                <Text style={[styles.titleTextRight, textColor]}>
+                                    {this.state.pressedContinue ? t('delete') : t('global:continue')}
+                                </Text>
                                 <Icon name="tick" size={width / 28} color={bodyColor} />
                             </View>
                         </TouchableOpacity>
@@ -362,15 +341,15 @@ class DeleteAccount extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    password: state.wallet.password,
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     isAutoPromoting: state.polling.isAutoPromoting,
     selectedAccountName: getSelectedAccountName(state),
     selectedAccountMeta: getSelectedAccountMeta(state),
     shouldPreventAction: shouldPreventAction(state),
     is2FAEnabled: state.settings.is2FAEnabled,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
+    yubikeyAndroidReaderMode: state.settings.yubikeyAndroidReaderMode,
 });
 
 const mapDispatchToProps = {

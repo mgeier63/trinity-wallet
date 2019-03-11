@@ -4,6 +4,7 @@ import { withNamespaces } from 'react-i18next';
 import { StyleSheet, View, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import FingerprintScanner from 'react-native-fingerprint-scanner';
 import { toggleModalActivity } from 'shared-modules/actions/ui';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { connect } from 'react-redux';
 import { width, height } from 'libs/dimensions';
 import { Icon } from 'ui/theme/icons';
@@ -15,15 +16,14 @@ import CustomTextInput from './CustomTextInput';
 
 const styles = StyleSheet.create({
     topContainer: {
-        flex: 1.2,
+        flex: 2.4,
         alignItems: 'center',
         justifyContent: 'flex-start',
         paddingTop: height / 16,
     },
     midContainer: {
-        flex: 4.8,
+        flex: 3.2,
         alignItems: 'center',
-        paddingTop: height / 5,
     },
     bottomContainer: {
         flex: 0.7,
@@ -56,7 +56,7 @@ class EnterPassword extends Component {
     constructor() {
         super();
         this.state = {
-            password: '',
+            password: null,
         };
         this.activateFingerprintScanner = this.activateFingerprintScanner.bind(this);
         this.hideModal = this.hideModal.bind(this);
@@ -66,12 +66,6 @@ class EnterPassword extends Component {
         leaveNavigationBreadcrumb('EnterPassword');
         if (this.props.isFingerprintEnabled) {
             this.activateFingerprintScanner();
-        }
-    }
-
-    componentWillUnmount() {
-        if (isAndroid) {
-            FingerprintScanner.release();
         }
     }
 
@@ -94,13 +88,10 @@ class EnterPassword extends Component {
     activateFingerprintScanner() {
         const { t } = this.props;
         if (isAndroid) {
-            this.showModal();
+            return this.showModal();
         }
         FingerprintScanner.authenticate({ description: t('fingerprintSetup:instructionsLogin') })
             .then(() => {
-                if (isAndroid) {
-                    this.hideModal();
-                }
                 this.props.setUserActive();
             })
             .catch(() => {
@@ -119,9 +110,13 @@ class EnterPassword extends Component {
     showModal() {
         const { theme } = this.props;
         this.props.toggleModalActivity('fingerprint', {
-            hideModal: () => this.props.toggleModalActivity(),
+            onBackButtonPress: () => this.props.toggleModalActivity(),
             theme,
             instance: 'login',
+            onSuccess: () => {
+                this.hideModal();
+                this.props.setUserActive();
+            },
         });
     }
 
@@ -137,7 +132,7 @@ class EnterPassword extends Component {
                     <View style={styles.midContainer}>
                         <CustomTextInput
                             label={t('global:password')}
-                            onChangeText={(text) => this.setState({ password: text })}
+                            onValidTextChange={(text) => this.setState({ password: text })}
                             containerStyle={{ width: Styling.contentWidth }}
                             autoCapitalize="none"
                             autoCorrect={false}
@@ -149,6 +144,8 @@ class EnterPassword extends Component {
                             widget="fingerprint"
                             fingerprintAuthentication={isFingerprintEnabled}
                             onFingerprintPress={this.activateFingerprintScanner}
+                            value={this.state.password}
+                            isPasswordInput
                         />
                     </View>
                     <View style={styles.bottomContainer}>
@@ -161,7 +158,7 @@ class EnterPassword extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     isFingerprintEnabled: state.settings.isFingerprintEnabled,
 });
 

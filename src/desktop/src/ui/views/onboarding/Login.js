@@ -12,8 +12,9 @@ import { getAccountInfo, getFullAccountInfo } from 'actions/accounts';
 import { clearWalletData, setPassword } from 'actions/wallet';
 
 import { getSelectedAccountName, getSelectedAccountMeta, isSettingUpNewAccount } from 'selectors/accounts';
+import { TWOFA_TOKEN_LENGTH } from 'libs/utils';
 
-import { capitalize } from 'libs/helpers';
+import { capitalize } from 'libs/iota/converter';
 import { hash, authorize } from 'libs/crypto';
 import SeedStore from 'libs/SeedStore';
 
@@ -24,6 +25,8 @@ import Loading from 'ui/components/Loading';
 import Modal from 'ui/components/modal/Modal';
 
 import { applyYubikeyMixinDesktop } from 'libs/yubikey/YubikeyMixinDesktop';
+import Migration from 'ui/global/Migration';
+
 
 import css from './index.scss';
 
@@ -46,6 +49,8 @@ class Login extends React.Component {
         additionalAccountMeta: PropTypes.object.isRequired,
         /** @ignore */
         additionalAccountName: PropTypes.string.isRequired,
+        /** @ignore */
+        completedMigration: PropTypes.bool.isRequired,
         /** @ignore */
         forceUpdate: PropTypes.bool.isRequired,
         /** @ignore */
@@ -71,7 +76,7 @@ class Login extends React.Component {
         /** @ignore */
         t: PropTypes.func.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
     };
 
     constructor(props) {
@@ -81,17 +86,18 @@ class Login extends React.Component {
             verifyTwoFA: false,
             code: '',
             password: '',
+            shouldMigrate: false,
         };
 
-        applyYubikeyMixinDesktop(this, props.yubikeySettings);
+        applyYubikeyMixinDesktop(this, props.yubikeySlot);
     }
 
     componentDidMount() {
         Electron.updateMenu('authorised', false);
 
-        const { addingAdditionalAccount } = this.props;
+        const { password, addingAdditionalAccount } = this.props;
 
-        if (addingAdditionalAccount) {
+        if (password.length && addingAdditionalAccount) {
             this.setupAccount();
         } else {
             this.props.clearWalletData();
@@ -99,12 +105,22 @@ class Login extends React.Component {
         }
     }
 
+    componentDidUpdate(prevProps) {
+        if (!prevProps.completedMigration && this.props.completedMigration) {
+            this.setupAccount();
+        }
+    }
+
+    componentWillUnmount() {
+        setTimeout(() => Electron.garbageCollect(), 1000);
+    }
+
     /**
      * Update 2fa code value and trigger authentication once necessary length is reached
      * @param {string} value - Code value
      */
     setCode = (value) => {
-        this.setState({ code: value }, () => value.length === 6 && this.handleSubmit());
+        this.setState({ code: value }, () => value.length === TWOFA_TOKEN_LENGTH && this.handleSubmit());
     };
 
     /**
@@ -157,7 +173,7 @@ class Login extends React.Component {
     };
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
         const { password } = this.state;
 
         let passwordHash = null;
@@ -181,7 +197,7 @@ class Login extends React.Component {
         } catch (err2) {
             postError(
                 t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }),
             );
             return;
         }
@@ -198,7 +214,7 @@ class Login extends React.Component {
         }
 
         const { password, code, verifyTwoFA } = this.state;
-        const { setPassword, generateAlert, t } = this.props;
+        const { setPassword, generateAlert, t, completedMigration } = this.props;
 
         //Yubikey chokes on 0 bytes input for HMAC, but I think it's generally a good idea to check for empty passwords here
         //rather than relying on "authorize" to fail
@@ -254,6 +270,11 @@ class Login extends React.Component {
                 verifyTwoFA: false,
             });
 
+            if (!completedMigration) {
+                this.setState({ shouldMigrate: true });
+                return;
+            }
+
             try {
                 await this.setupAccount();
             } catch (err) {
@@ -267,8 +288,8 @@ class Login extends React.Component {
     };
 
     render() {
-        const { forceUpdate, t, addingAdditionalAccount, ui } = this.props;
-        const { verifyTwoFA, code } = this.state;
+        const { forceUpdate, t, addingAdditionalAccount, ui, completedMigration } = this.props;
+        const { verifyTwoFA, code, shouldMigrate } = this.state;
 
         if (ui.isFetchingAccountInfo) {
             return (
@@ -278,6 +299,10 @@ class Login extends React.Component {
                     subtitle={addingAdditionalAccount ? t('loading:thisMayTake') : null}
                 />
             );
+        }
+
+        if (shouldMigrate && !completedMigration) {
+            return <Migration />;
         }
 
         return (
@@ -326,7 +351,10 @@ class Login extends React.Component {
     }
 }
 
-const mapStateToProps = (state) => ({
+const mapStateToProps = (state) => (
+
+
+    {
     password: state.wallet.password,
     currentAccountName: getSelectedAccountName(state),
     currentAccountMeta: getSelectedAccountMeta(state),
@@ -335,10 +363,10 @@ const mapStateToProps = (state) => ({
     additionalAccountName: state.accounts.accountInfoDuringSetup.name,
     ui: state.ui,
     currency: state.settings.currency,
-    onboarding: state.ui.onboarding,
     forceUpdate: state.wallet.forceUpdate,
+    completedMigration: state.settings.completedMigration,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
 });
 
 const mapDispatchToProps = {

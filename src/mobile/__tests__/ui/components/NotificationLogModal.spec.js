@@ -4,15 +4,14 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { shallow } from 'enzyme';
 import { NotificationLogModal as NotificationLog } from 'ui/components/NotificationLogModal';
+import theme from '../../../__mocks__/theme';
 
 const getProps = (overrides) =>
     assign(
         {},
         {
             backgroundColor: '#ffffff',
-            borderColor: { borderColor: '#ffffff' },
-            textColor: { color: '#ffffff' },
-            barColor: '#ffffff',
+            theme,
             hideModal: noop,
             notificationLog: [],
             clearLog: noop,
@@ -26,22 +25,10 @@ jest.mock('bugsnag-react-native', () => ({
     Client: jest.fn(() => ({ leaveBreadcrumb: jest.fn() })),
 }));
 
-describe('Testing NotificationLog component', () => {
+describe('Testing NotificationLogModal component', () => {
     describe('propTypes', () => {
-        it('should require a backgroundColor string as a prop', () => {
-            expect(NotificationLog.propTypes.backgroundColor).toEqual(PropTypes.string.isRequired);
-        });
-
-        it('should require a borderColor object as a prop', () => {
-            expect(NotificationLog.propTypes.borderColor).toEqual(PropTypes.object.isRequired);
-        });
-
-        it('should require a textColor object as a prop', () => {
-            expect(NotificationLog.propTypes.textColor).toEqual(PropTypes.object.isRequired);
-        });
-
-        it('should require a barColor string as a prop', () => {
-            expect(NotificationLog.propTypes.barColor).toEqual(PropTypes.string.isRequired);
+        it('should require a theme string as a prop', () => {
+            expect(NotificationLog.propTypes.theme).toEqual(PropTypes.object.isRequired);
         });
 
         it('should require a hideModal function as a prop', () => {
@@ -62,10 +49,11 @@ describe('Testing NotificationLog component', () => {
             const props = getProps();
 
             const wrapper = shallow(<NotificationLog {...props} />);
-            expect(wrapper.name()).toEqual('View');
+
+            expect(wrapper.name()).toEqual('Connect(ModalViewComponent)');
         });
 
-        it('should call instance method "clearNotificationLog" when onPress prop of second TouchableOpacity element is triggered', () => {
+        it('should call instance method "clearNotificationLog" when onLeftButtonPress prop of second ModalView element is triggered', () => {
             const props = getProps();
 
             const wrapper = shallow(<NotificationLog {...props} />);
@@ -73,11 +61,9 @@ describe('Testing NotificationLog component', () => {
 
             jest.spyOn(instance, 'clearNotificationLog');
 
-            const touchableOpacity = wrapper.find('TouchableOpacity').at(0);
-
             expect(instance.clearNotificationLog).toHaveBeenCalledTimes(0);
 
-            touchableOpacity.props().onPress();
+            wrapper.props().onLeftButtonPress();
 
             expect(instance.clearNotificationLog).toHaveBeenCalledTimes(1);
         });

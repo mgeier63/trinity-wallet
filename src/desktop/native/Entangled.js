@@ -1,7 +1,6 @@
-const { fork } = require('child_process');
-const path = require('path');
-const { powFunc, genFunc } = require('entangled-node');
-const { tritsToChars } = require('../src/libs/helpers');
+import { fork } from 'child_process';
+import path from 'path';
+import { powTrytesFunc, powBundleFunc, genAddressTritsFunc } from 'entangled-node';
 
 let timeout = null;
 
@@ -37,13 +36,22 @@ process.on('message', async (data) => {
     const payload = JSON.parse(data);
 
     if (payload.job === 'pow') {
-        const pow = await powFunc(payload.trytes, payload.mwm);
+        const pow = await powTrytesFunc(payload.trytes, payload.mwm);
+        process.send(pow);
+    }
+
+    if (payload.job === 'batchedPow') {
+        const pow = await powBundleFunc(
+            payload.trytes,
+            payload.trunkTransaction,
+            payload.branchTransaction,
+            payload.mwm,
+        );
         process.send(pow);
     }
 
     if (payload.job === 'gen') {
-        const seedString = tritsToChars(payload.seed);
-        const address = await genFunc(seedString, payload.index, payload.security);
+        const address = await genAddressTritsFunc(payload.seed, payload.index, payload.security);
         process.send(address);
     }
 });
@@ -52,9 +60,12 @@ const Entangled = {
     powFn: async (trytes, mwm) => {
         return await exec(JSON.stringify({ job: 'pow', trytes, mwm }));
     },
+    batchedPowFn: async (trytes, trunkTransaction, branchTransaction, mwm) => {
+        return await exec(JSON.stringify({ job: 'batchedPow', trytes, trunkTransaction, branchTransaction, mwm }));
+    },
     genFn: async (seed, index, security) => {
         return await exec(JSON.stringify({ job: 'gen', seed, index, security }));
     },
 };
 
-module.exports = Entangled;
+export default Entangled;

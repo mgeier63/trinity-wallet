@@ -2,8 +2,9 @@ import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
 import { BackHandler, View, StyleSheet } from 'react-native';
-import { Navigation } from 'react-native-navigation';
+import { navigator } from 'libs/navigation';
 import { setSetting } from 'shared-modules/actions/wallet';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { withNamespaces } from 'react-i18next';
 import timer from 'react-native-timer';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
@@ -46,35 +47,7 @@ class AddNewAccount extends Component {
      * @method addNewSeed
      */
     addNewSeed() {
-        const { theme: { body } } = this.props;
-        Navigation.push('appStack', {
-            component: {
-                name: 'newSeedSetup',
-                options: {
-                    animations: {
-                        push: {
-                            enable: false,
-                        },
-                        pop: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: body.bg,
-                    },
-                },
-            },
-        });
+        navigator.push('newSeedSetup');
         timer.clearInterval('inactivityTimer');
         BackHandler.removeEventListener('homeBackPress');
     }
@@ -91,7 +64,7 @@ class AddNewAccount extends Component {
         const rows = [
             { name: t('useExistingSeed'), icon: 'key', function: () => this.props.setSetting('addExistingSeed') },
             { name: t('createNewSeed'), icon: 'plusAlt', function: this.addNewSeed },
-            { name: 'back', function: () => this.props.setSetting('mainSettings') },
+            { name: 'back', function: () => this.props.setSetting('accountManagement') },
         ];
         return renderSettingsRows(rows, theme);
     }
@@ -102,7 +75,7 @@ class AddNewAccount extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
 });
 
 const mapDispatchToProps = {

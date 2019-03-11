@@ -1,4 +1,3 @@
-/* global Electron */
 import React from 'react';
 import PropTypes from 'prop-types';
 import { formatValue, formatUnit } from 'libs/iota/utils';
@@ -14,6 +13,7 @@ import Icon from 'ui/components/Icon';
 import Button from 'ui/components/Button';
 import Progress from 'ui/components/Progress';
 import Balance from 'ui/components/Balance';
+import Checksum from 'ui/components/Checksum';
 import Confirm from 'ui/components/modal/Confirm';
 import withSendData from 'containers/wallet/Send';
 
@@ -93,7 +93,7 @@ class Send extends React.PureComponent {
     }
 
     confirmTransfer = async () => {
-        const { fields, password, accountName, accountMeta, sendTransfer, settings } = this.props;
+        const { fields, password, accountName, accountMeta, sendTransfer } = this.props;
 
         this.setState({
             isTransferModalVisible: false,
@@ -101,14 +101,12 @@ class Send extends React.PureComponent {
 
         const seedStore = await new SeedStore[accountMeta.type](password, accountName, accountMeta);
 
-        const powFn = !settings.remotePoW ? Electron.powFn : null;
-
         const message =
             SeedStore[accountMeta.type].isMessageAvailable || parseInt(fields.amount || '0') === 0
                 ? fields.message
                 : '';
 
-        sendTransfer(seedStore, fields.address, parseInt(fields.amount) || 0, message, powFn);
+        sendTransfer(seedStore, fields.address, parseInt(fields.amount) || 0, message);
     };
 
     render() {
@@ -137,7 +135,11 @@ class Send extends React.PureComponent {
                         onConfirm={() => this.confirmTransfer()}
                         content={{
                             title: t('transferConfirmation:youAreAbout', { contents: transferContents }),
-                            message: fields.address,
+                            message: (
+                                <span className={css.address}>
+                                    <Checksum address={fields.address} />
+                                </span>
+                            ),
                             confirm: t('send'),
                             cancel: t('cancel'),
                         }}

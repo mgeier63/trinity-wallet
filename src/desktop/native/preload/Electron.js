@@ -1,20 +1,21 @@
-const { ipcRenderer: ipc, clipboard } = require('electron');
-const { dialog } = require('electron').remote;
-const currentWindow = require('electron').remote.getCurrentWindow();
-const keytar = require('keytar');
-const fs = require('fs');
-const electronSettings = require('electron-settings');
-const Kerl = require('iota.lib.js/lib/crypto/kerl/kerl');
-const Curl = require('iota.lib.js/lib/crypto/curl/curl');
-const Converter = require('iota.lib.js/lib/crypto/converter/converter');
-const argon2 = require('argon2');
-const machineUuid = require('machine-uuid-sync');
-const kdbx = require('../kdbx');
-const Entangled = require('../Entangled');
-const { byteToTrit, byteToChar, removeNonAlphaNumeric } = require('../../src/libs/helpers');
-const ledger = require('../hardware/Ledger');
-const { version } = require('../../package.json');
-const yubikeyUsbBackend = require('../hardware/YubikeyUsbBackend');
+import { ipcRenderer as ipc, clipboard, remote } from 'electron';
+import keytar from 'keytar';
+import fs from 'fs';
+import electronSettings from 'electron-settings';
+import Kerl from 'iota.lib.js/lib/crypto/kerl/kerl';
+import Curl from 'iota.lib.js/lib/crypto/curl/curl';
+import Converter from 'iota.lib.js/lib/crypto/converter/converter';
+import argon2 from 'argon2';
+import machineUuid from 'machine-uuid-sync';
+import { byteToTrit, byteToChar } from 'libs/iota/converter';
+import { removeNonAlphaNumeric } from 'libs/utils';
+
+import kdbx from '../kdbx';
+import Entangled from '../Entangled';
+import ledger from '../hardware/Ledger';
+import Realm from '../Realm';
+import { version } from '../../package.json';
+import { yubikeyGetOrWaitForBackend, yubikeyCancelWaitForBackend } from '../hardware/YubikeyUsbBackend';
 
 const capitalize = (string) => {
     return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
@@ -48,7 +49,7 @@ let onboardingSeed = null;
 let onboardingGenerated = false;
 
 // Use a different keychain entry for development versions
-const KEYTAR_SERVICE = process.env.NODE_ENV === 'development' ? 'Trinity wallet (dev)' : 'Trinity wallet';
+const KEYTAR_SERVICE = remote.app.isPackaged ? 'Trinity wallet' : 'Trinity wallet (dev)';
 
 /**
  * Global Electron helper for native support
@@ -78,12 +79,11 @@ const Electron = {
 
     /**
      * Do Proof of Work
-     * @param {string} trytes - Input trytes
-     * @param {number} mwm - Min Weight Magnitude
-     * @returns {string} Proof of Work
+     * @param {boolean} batchedPow - Should return batched PoW function
+     * @returns {function} Proof of Work
      */
-    powFn: async (trytes, mwm) => {
-        return await Entangled.powFn(trytes, mwm);
+    getPowFn: (batchedPow) => {
+        return batchedPow ? Entangled.batchedPowFn : Entangled.powFn;
     },
 
     /**
@@ -107,6 +107,14 @@ const Electron = {
         }
 
         return addresses;
+    },
+
+    /**
+     * Returns per-user application data directory
+     * @returns {string} - Full app data path
+     */
+    getUserDataPath: () => {
+        return remote.app.getPath('userData');
     },
 
     /**
@@ -137,6 +145,15 @@ const Electron = {
     },
 
     /**
+     * Set Tray icon
+     * @param {boolean} enabled - Is the tray app enabled
+     * @returns {undefined}
+     */
+    setTray: (enabled) => {
+        ipc.send('tray.enable', enabled);
+    },
+
+    /**
      * Proxy deep link value to main process
      * @returns {undefined}
      */
@@ -160,7 +177,6 @@ const Electron = {
      * @returns {boolean} If item update is succesfull
      */
     setStorage(key, item) {
-        ipc.send('storage.update', JSON.stringify({ key, item }));
         return electronSettings.set(key, item);
     },
 
@@ -183,13 +199,27 @@ const Electron = {
     },
 
     /**
+     * Get all local storage items
+     * @returns {object} Storage items
+     */
+    getAllStorage() {
+        const storage = electronSettings.getAll();
+        const data = {};
+
+        Object.entries(storage).forEach(
+            ([key, value]) =>
+                key.indexOf('reduxPersist') === 0 && Object.assign(data, { [key.split(':')[1]]: JSON.parse(value) }),
+        );
+        return data;
+    },
+
+    /**
      * Get all local storage item keys
      * @returns {array} Storage item keys
      */
-    getAllStorage() {
-        const data = electronSettings.getAll();
-        const keys = Object.keys(data).filter((key) => key.indexOf('reduxPersist') === 0);
-        return keys;
+    getAllStorageKeys() {
+        const data = this.getAllStorage();
+        return Object.keys(data);
     },
 
     /**
@@ -262,7 +292,7 @@ const Electron = {
      * @returns {undefined}
      */
     minimize: () => {
-        currentWindow.minimize();
+        remote.getCurrentWindow().minimize();
     },
 
     /**
@@ -270,10 +300,11 @@ const Electron = {
      * @returns {undefined}
      */
     maximize: () => {
-        if (currentWindow.isMaximized()) {
-            currentWindow.unmaximize();
+        const window = remote.getCurrentWindow();
+        if (window.isMaximized()) {
+            window.unmaximize();
         } else {
-            currentWindow.maximize();
+            window.maximize();
         }
     },
 
@@ -290,7 +321,7 @@ const Electron = {
      * @returns {undefined}
      */
     close: () => {
-        currentWindow.close();
+        remote.getCurrentWindow().close();
     },
 
     /**
@@ -299,6 +330,15 @@ const Electron = {
      */
     showMenu: () => {
         ipc.send('menu.popup');
+    },
+
+    /**
+     * Proxy store updates to Tray application
+     * @param {string} payload - Store state
+     * @returns {undefined}
+     */
+    storeUpdate: (payload) => {
+        ipc.send('store.update', payload);
     },
 
     /**
@@ -367,7 +407,7 @@ const Electron = {
      * @returns {number} Returns 0 after dialog button press
      */
     dialog: async (message, buttonTitle, title) => {
-        return await dialog.showMessageBox(currentWindow, {
+        return await remote.dialog.showMessageBox(remote.getCurrentWindow(), {
             type: 'info',
             title,
             message,
@@ -381,7 +421,7 @@ const Electron = {
      * @param {any} payload - Message payload
      */
     send: (type, payload) => {
-        currentWindow.webContents.send(type, payload);
+        remote.getCurrentWindow().webContents.send(type, payload);
     },
 
     /**
@@ -398,7 +438,7 @@ const Electron = {
             if (seeds.length === 1) {
                 prefix = removeNonAlphaNumeric(seeds[0].title, 'SeedVault').trim();
             }
-            const path = await dialog.showSaveDialog(currentWindow, {
+            const path = await remote.dialog.showSaveDialog(remote.getCurrentWindow(), {
                 title: 'Export keyfile',
                 defaultPath: `${prefix}-${now
                     .toISOString()
@@ -437,16 +477,14 @@ const Electron = {
      * @param {string} accountName - target account name
      * @param {array} transactions - new transactions
      * @param {array} confirmations - recently confirmed transactions
+     * @param {object} settings - wallet settings
      */
-    notify: (accountName, transactions, confirmations) => {
+    notify: (accountName, transactions, confirmations, settings) => {
         if (!transactions.length && !confirmations.length) {
             return;
         }
 
-        const data = electronSettings.get('reduxPersist:settings');
-        const settings = JSON.parse(data);
-
-        if (!settings.notifications.general) {
+        if (!settings.notifications || !settings.notifications.general) {
             return;
         }
 
@@ -471,7 +509,7 @@ const Electron = {
         });
 
         notification.onclick = () => {
-            currentWindow.webContents.send('account.switch', accountName);
+            remote.getCurrentWindow().webContents.send('account.switch', accountName);
         };
     },
 
@@ -542,6 +580,14 @@ const Electron = {
     },
 
     /**
+     * Return Realm instance
+     * @returns {Object} - Realm instance
+     */
+    getRealm: () => {
+        return Realm;
+    },
+
+    /**
      * Add native window wallet event listener
      * @param {string} event - Target event name
      * @param {function} callback - Event trigger callback
@@ -578,7 +624,8 @@ const Electron = {
     _eventListeners: {},
 
     ledger,
-    yubikeyUsbBackend,
+    yubikeyGetOrWaitForBackend,
+    yubikeyCancelWaitForBackend,
 };
 
-module.exports = Electron;
+export default Electron;

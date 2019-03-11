@@ -4,15 +4,17 @@ import authenticator from 'authenticator';
 import { set2FAStatusOtp } from 'shared-modules/actions/settings';
 import { generateAlert } from 'shared-modules/actions/alerts';
 import { connect } from 'react-redux';
-import { Navigation } from 'react-native-navigation';
+import { navigator } from 'libs/navigation';
 import { StyleSheet, View, Text, TouchableWithoutFeedback, Keyboard, BackHandler } from 'react-native';
 import { withNamespaces } from 'react-i18next';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import CustomTextInput from 'ui/components/CustomTextInput';
 import Fonts from 'ui/theme/fonts';
 import { getTwoFactorAuthKeyFromKeychain } from 'libs/keychain';
 import DualFooterButtons from 'ui/components/DualFooterButtons';
-import { width, height } from 'libs/dimensions';
-import { Icon } from 'ui/theme/icons';
+import AnimatedComponent from 'ui/components/AnimatedComponent';
+import { height, width } from 'libs/dimensions';
+import Header from 'ui/components/Header';
 import { Styling } from 'ui/theme/general';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 
@@ -23,19 +25,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     topWrapper: {
-        flex: 0.3,
+        flex: 1.6,
         alignItems: 'center',
         justifyContent: 'flex-start',
-        paddingTop: height / 16,
         width,
     },
     midWrapper: {
-        flex: 2,
+        flex: 1.6,
         alignItems: 'center',
         justifyContent: 'flex-start',
     },
     bottomWrapper: {
-        flex: 0.3,
+        flex: 2,
         alignItems: 'center',
         justifyContent: 'flex-end',
     },
@@ -44,7 +45,7 @@ const styles = StyleSheet.create({
         fontSize: Styling.fontSize4,
         textAlign: 'center',
         backgroundColor: 'transparent',
-        marginBottom: height / 8,
+        paddingBottom: height / 10,
     },
 });
 
@@ -61,16 +62,12 @@ class TwoFactorSetupEnterToken extends Component {
         set2FAStatusOtp: PropTypes.func.isRequired,
         /** @ignore */
         t: PropTypes.func.isRequired,
-        /** @ignore */
-        password: PropTypes.object.isRequired,
     };
 
     constructor() {
         super();
-
         this.goBack = this.goBack.bind(this);
         this.check2FA = this.check2FA.bind(this);
-
         this.state = {
             code: '',
         };
@@ -93,7 +90,7 @@ class TwoFactorSetupEnterToken extends Component {
      * @method goBack
      */
     goBack() {
-        Navigation.pop(this.props.componentId);
+        navigator.pop(this.props.componentId);
     }
 
     /**
@@ -101,32 +98,7 @@ class TwoFactorSetupEnterToken extends Component {
      * @method navigateToHome
      */
     navigateToHome() {
-        const { theme: { body, bar } } = this.props;
-        Navigation.setStackRoot('appStack', {
-            component: {
-                name: 'home',
-                options: {
-                    animations: {
-                        setStackRoot: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: bar.alt,
-                    },
-                },
-            },
-        });
+        navigator.setStackRoot('home');
     }
 
     /**
@@ -134,8 +106,8 @@ class TwoFactorSetupEnterToken extends Component {
      * @method check2FA
      */
     check2FA() {
-        const { t, password } = this.props;
-        getTwoFactorAuthKeyFromKeychain(password).then((key) => {
+        const { t } = this.props;
+        getTwoFactorAuthKeyFromKeychain(global.passwordHash).then((key) => {
             if (key === null) {
                 this.props.generateAlert(
                     'error',
@@ -144,14 +116,12 @@ class TwoFactorSetupEnterToken extends Component {
                 );
             }
             const verified = authenticator.verifyToken(key, this.state.code);
-
             if (verified) {
                 this.props.set2FAStatusOtp(true);
-                this.navigateToHome().then(
-                    (this.timeout = setTimeout(() => {
-                        this.props.generateAlert('success', t('twoFAEnabled'), t('twoFAEnabledExplanation'));
-                    }, 500)),
-                );
+                this.navigateToHome();
+                this.timeout = setTimeout(() => {
+                    this.props.generateAlert('success', t('twoFAEnabled'), t('twoFAEnabledExplanation'));
+                }, 300);
             } else {
                 this.props.generateAlert('error', t('wrongCode'), t('wrongCodeExplanation'));
             }
@@ -167,31 +137,51 @@ class TwoFactorSetupEnterToken extends Component {
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={[styles.container, backgroundColor]}>
                     <View style={styles.topWrapper}>
-                        <Icon name="iota" size={width / 8} color={theme.body.color} />
+                        <AnimatedComponent
+                            animationInType={['slideInRight', 'fadeIn']}
+                            animationOutType={['slideOutLeft', 'fadeOut']}
+                            delay={400}
+                        >
+                            <Header textColor={theme.body.color} />
+                        </AnimatedComponent>
                     </View>
                     <View style={styles.midWrapper}>
-                        <View style={{ flex: 0.25 }} />
-                        <Text style={[styles.subHeaderText, textColor]}>{t('enterCode')}</Text>
-                        <CustomTextInput
-                            label={t('code')}
-                            onChangeText={(code) => this.setState({ code })}
-                            containerStyle={{ width: Styling.contentWidth }}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            enablesReturnKeyAutomatically
-                            returnKeyType="done"
-                            onSubmitEditing={this.check2FA}
-                            theme={theme}
-                            keyboardType="numeric"
-                        />
+                        <AnimatedComponent
+                            animationInType={['slideInRight', 'fadeIn']}
+                            animationOutType={['slideOutLeft', 'fadeOut']}
+                            delay={266}
+                        >
+                            <Text style={[styles.subHeaderText, textColor]}>{t('enterCode')}</Text>
+                        </AnimatedComponent>
+                        <AnimatedComponent
+                            animationInType={['slideInRight', 'fadeIn']}
+                            animationOutType={['slideOutLeft', 'fadeOut']}
+                            delay={133}
+                        >
+                            <CustomTextInput
+                                label={t('code')}
+                                onValidTextChange={(code) => this.setState({ code })}
+                                containerStyle={{ width: Styling.contentWidth }}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                enablesReturnKeyAutomatically
+                                returnKeyType="done"
+                                onSubmitEditing={this.check2FA}
+                                theme={theme}
+                                keyboardType="numeric"
+                                value={this.state.code}
+                            />
+                        </AnimatedComponent>
                     </View>
                     <View style={styles.bottomWrapper}>
-                        <DualFooterButtons
-                            onLeftButtonPress={this.goBack}
-                            onRightButtonPress={this.check2FA}
-                            leftButtonText={t('global:back')}
-                            rightButtonText={t('global:done')}
-                        />
+                        <AnimatedComponent animationInType={['fadeIn']} animationOutType={['fadeOut']} delay={0}>
+                            <DualFooterButtons
+                                onLeftButtonPress={this.goBack}
+                                onRightButtonPress={this.check2FA}
+                                leftButtonText={t('global:back')}
+                                rightButtonText={t('global:done')}
+                            />
+                        </AnimatedComponent>
                     </View>
                 </View>
             </TouchableWithoutFeedback>
@@ -204,8 +194,7 @@ const mapDispatchToProps = {
 };
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
-    password: state.wallet.password,
+    theme: getThemeFromState(state),
 });
 
 export default withNamespaces(['twoFA', 'global'])(

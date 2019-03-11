@@ -4,16 +4,17 @@ import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
 import authenticator from 'authenticator';
 import { StyleSheet, View, Text, TouchableWithoutFeedback, Keyboard } from 'react-native';
-import { Navigation } from 'react-native-navigation';
+import { navigator } from 'libs/navigation';
 import { resetWallet, set2FAStatusOtp } from 'shared-modules/actions/settings';
 import { generateAlert } from 'shared-modules/actions/alerts';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { getTwoFactorAuthKeyFromKeychain } from 'libs/keychain';
-import WithBackPressGoToHome from 'ui/components/BackPressGoToHome';
 import Fonts from 'ui/theme/fonts';
 import CustomTextInput from 'ui/components/CustomTextInput';
 import DualFooterButtons from 'ui/components/DualFooterButtons';
-import { width, height } from 'libs/dimensions';
-import { Icon } from 'ui/theme/icons';
+import AnimatedComponent from 'ui/components/AnimatedComponent';
+import Header from 'ui/components/Header';
+import { height } from 'libs/dimensions';
 import { Styling } from 'ui/theme/general';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 
@@ -24,10 +25,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     topWrapper: {
-        flex: 1.3,
+        flex: 1.6,
         alignItems: 'center',
         justifyContent: 'flex-start',
-        paddingTop: height / 16,
     },
     midWrapper: {
         flex: 1.6,
@@ -60,8 +60,6 @@ class Disable2FA extends Component {
         t: PropTypes.func.isRequired,
         /** @ignore */
         set2FAStatusOtp: PropTypes.func.isRequired,
-        /** @ignore */
-        password: PropTypes.object.isRequired,
     };
 
     constructor() {
@@ -81,7 +79,7 @@ class Disable2FA extends Component {
      * Attempts to disable 2FA, fails if the token is not correct
      */
     disable2FA() {
-        return getTwoFactorAuthKeyFromKeychain(this.props.password)
+        return getTwoFactorAuthKeyFromKeychain(global.passwordHash)
             .then((key) => {
                 const verified = authenticator.verifyToken(key, this.state.token);
                 if (verified) {
@@ -90,12 +88,16 @@ class Disable2FA extends Component {
                     this.timeout = setTimeout(() => {
                         this.props.generateAlert(
                             'success',
-                            '2FA is now disabled',
-                            'You have successfully disabled Two Factor Authentication.',
+                            this.props.t('twoFA:twoFADisabled'),
+                            this.props.t('twoFA:twoFADisabledExplanation'),
                         );
                     }, 300);
                 } else {
-                    this.props.generateAlert('error', 'Wrong code', 'The code you entered is not correct.');
+                    this.props.generateAlert(
+                        'error',
+                        this.props.t('twoFA:wrongCode'),
+                        this.props.t('twoFA:wrongCodeExplanation'),
+                    );
                 }
             })
             .catch((err) => console.error(err)); // eslint-disable-line no-console
@@ -107,7 +109,7 @@ class Disable2FA extends Component {
      * @method goBack
      */
     goBack() {
-        Navigation.pop(this.props.componentId);
+        navigator.pop(this.props.componentId);
     }
 
     render() {
@@ -120,30 +122,49 @@ class Disable2FA extends Component {
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View>
                         <View style={styles.topWrapper}>
-                            <Icon name="iota" size={width / 8} color={theme.body.color} />
+                            <AnimatedComponent
+                                animationInType={['slideInRight', 'fadeIn']}
+                                animationOutType={['slideOutLeft', 'fadeOut']}
+                                delay={400}
+                            >
+                                <Header textColor={theme.body.color} />
+                            </AnimatedComponent>
                         </View>
                         <View style={styles.midWrapper}>
-                            <Text style={[styles.generalText, textColor]}>Enter your token to disable 2FA</Text>
-                            <CustomTextInput
-                                label="Token"
-                                onChangeText={(token) => this.setState({ token })}
-                                containerStyle={{ width: Styling.contentWidth }}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                enablesReturnKeyAutomatically
-                                returnKeyType="done"
-                                value={this.state.token}
-                                keyboardType="numeric"
-                                theme={theme}
-                            />
+                            <AnimatedComponent
+                                animationInType={['slideInRight', 'fadeIn']}
+                                animationOutType={['slideOutLeft', 'fadeOut']}
+                                delay={266}
+                            >
+                                <Text style={[styles.generalText, textColor]}>{t('twoFA:enterCode')}</Text>
+                            </AnimatedComponent>
+                            <AnimatedComponent
+                                animationInType={['slideInRight', 'fadeIn']}
+                                animationOutType={['slideOutLeft', 'fadeOut']}
+                                delay={133}
+                            >
+                                <CustomTextInput
+                                    label="Token"
+                                    onValidTextChange={(token) => this.setState({ token })}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    enablesReturnKeyAutomatically
+                                    returnKeyType="done"
+                                    value={this.state.token}
+                                    keyboardType="numeric"
+                                    theme={theme}
+                                />
+                            </AnimatedComponent>
                         </View>
                         <View style={styles.bottomContainer}>
-                            <DualFooterButtons
-                                onLeftButtonPress={this.goBack}
-                                onRightButtonPress={this.disable2FA}
-                                leftButtonText={t('global:cancel')}
-                                rightButtonText={t('done')}
-                            />
+                            <AnimatedComponent animationInType={['fadeIn']} animationOutType={['fadeOut']} delay={0}>
+                                <DualFooterButtons
+                                    onLeftButtonPress={this.goBack}
+                                    onRightButtonPress={this.disable2FA}
+                                    leftButtonText={t('global:cancel')}
+                                    rightButtonText={t('done')}
+                                />
+                            </AnimatedComponent>
                         </View>
                     </View>
                 </TouchableWithoutFeedback>
@@ -153,8 +174,7 @@ class Disable2FA extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
-    password: state.wallet.password,
+    theme: getThemeFromState(state),
 });
 
 const mapDispatchToProps = {
@@ -163,6 +183,6 @@ const mapDispatchToProps = {
     set2FAStatusOtp,
 };
 
-export default WithBackPressGoToHome()(
-    withNamespaces(['resetWalletRequirePassword', 'global'])(connect(mapStateToProps, mapDispatchToProps)(Disable2FA)),
+export default withNamespaces(['resetWalletRequirePassword', 'global'])(
+    connect(mapStateToProps, mapDispatchToProps)(Disable2FA),
 );

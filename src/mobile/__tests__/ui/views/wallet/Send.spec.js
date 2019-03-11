@@ -3,6 +3,7 @@ import noop from 'lodash/noop';
 import React from 'react';
 import { shallow } from 'enzyme';
 import { Send } from 'ui/views/wallet/Send';
+import theme from '../../../../__mocks__/theme';
 
 jest.mock('react-native-camera', () => {});
 jest.mock('react-native-is-device-rooted', () => ({
@@ -24,6 +25,7 @@ const getProps = (overrides) =>
             isSyncing: false,
             seedIndex: 0,
             selectedAccountName: 'foo',
+            selectedAccountMeta: { type: 'keychain' },
             conversionRate: 5,
             usdPrice: 10,
             isGettingSensitiveInfoToMakeTransaction: false,
@@ -34,16 +36,9 @@ const getProps = (overrides) =>
             getFromKeychainError: noop,
             closeTopBar: noop,
             isSendingTransfer: false,
-            negative: { color: 'black' },
-            bar: { color: 'red', bg: 'white' },
-            body: { color: 'blue', bg: 'green' },
-            primary: {
-                color: 'white',
-                body: 'white',
-                hover: 'green',
-            },
             isTransitioning: false,
             address: '9'.repeat(81),
+            theme,
             amount: '10',
             message: 'baz',
             setSendAddressField: noop,
@@ -51,14 +46,12 @@ const getProps = (overrides) =>
             setSendMessageField: noop,
             setSendDenomination: noop,
             denomination: 'i',
-            theme: {},
             resetProgress: noop,
             startTrackingProgress: noop,
             activeStepIndex: 0,
             activeSteps: [],
             timeTakenByEachProgressStep: [],
             remotePoW: false,
-            password: 'foo',
             makeTransaction: noop,
             generateTransferErrorAlert: noop,
             availableBalance: 100,
@@ -69,6 +62,8 @@ const getProps = (overrides) =>
             isIOSKeyboardActive: false,
             toggleModalActivity: noop,
             isModalActive: false,
+            selectedAccountType: 'keychain',
+            isKeyboardActive: false,
         },
         overrides,
     );

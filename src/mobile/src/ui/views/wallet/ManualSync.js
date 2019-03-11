@@ -5,7 +5,7 @@ import { withNamespaces } from 'react-i18next';
 import { connect } from 'react-redux';
 import { setSetting } from 'shared-modules/actions/wallet';
 import { generateAlert } from 'shared-modules/actions/alerts';
-import { shouldPreventAction } from 'shared-modules/selectors/global';
+import { shouldPreventAction, getThemeFromState } from 'shared-modules/selectors/global';
 import { getSelectedAccountName, getSelectedAccountMeta } from 'shared-modules/selectors/accounts';
 import { manuallySyncAccount } from 'shared-modules/actions/accounts';
 import SeedStore from 'libs/SeedStore';
@@ -50,14 +50,14 @@ const styles = StyleSheet.create({
         marginLeft: width / 20,
     },
     syncButtonContainer: {
-        flex: 1,
+        flex: 0.7,
         alignItems: 'center',
         justifyContent: 'center',
     },
     infoText: {
         fontFamily: 'SourceSansPro-Light',
         fontSize: Styling.fontSize3,
-        textAlign: 'left',
+        textAlign: 'center',
         backgroundColor: 'transparent',
     },
     activityIndicator: {
@@ -81,8 +81,6 @@ export class ManualSync extends Component {
         t: PropTypes.func.isRequired,
         /** @ignore */
         theme: PropTypes.object.isRequired,
-        /** Hash for wallet's password */
-        password: PropTypes.object.isRequired,
         /** Account name for selected account */
         selectedAccountName: PropTypes.string.isRequired,
         /** Account meta for selected account */
@@ -97,11 +95,11 @@ export class ManualSync extends Component {
         leaveNavigationBreadcrumb('ManualSync');
     }
 
-    sync() {
-        const { password, selectedAccountName, selectedAccountMeta, t, shouldPreventAction } = this.props;
+    async sync() {
+        const { selectedAccountName, selectedAccountMeta, t, shouldPreventAction } = this.props;
 
         if (!shouldPreventAction) {
-            const seedStore = new SeedStore[selectedAccountMeta.type](password, selectedAccountName);
+            const seedStore = await new SeedStore[selectedAccountMeta.type](global.passwordHash, selectedAccountName);
             this.props.manuallySyncAccount(seedStore, selectedAccountName);
         } else {
             this.props.generateAlert('error', t('global:pleaseWait'), t('global:pleaseWaitExplanation'));
@@ -118,17 +116,12 @@ export class ManualSync extends Component {
                     <View style={{ flex: 0.8 }} />
                     {!isSyncing && (
                         <View style={styles.innerContainer}>
-                            <InfoBox
-                                body={body}
-                                text={
-                                    <View>
-                                        <Text style={[styles.infoText, textColor]}>{t('manualSync:outOfSync')}</Text>
-                                        <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
-                                            {t('manualSync:pressToSync')}
-                                        </Text>
-                                    </View>
-                                }
-                            />
+                            <InfoBox>
+                                <Text style={[styles.infoText, textColor]}>{t('manualSync:outOfSync')}</Text>
+                                <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
+                                    {t('manualSync:pressToSync')}
+                                </Text>
+                            </InfoBox>
                             <View style={styles.syncButtonContainer}>
                                 <CtaButton
                                     ctaColor={primary.color}
@@ -143,22 +136,15 @@ export class ManualSync extends Component {
                     )}
                     {isSyncing && (
                         <View style={styles.innerContainer}>
-                            <InfoBox
-                                body={body}
-                                text={
-                                    <View>
-                                        <Text style={[styles.infoText, textColor]}>
-                                            {t('manualSync:syncingYourAccount')}
-                                        </Text>
-                                        <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
-                                            {t('manualSync:thisMayTake')}
-                                        </Text>
-                                        <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
-                                            {t('manualSync:doNotClose')}
-                                        </Text>
-                                    </View>
-                                }
-                            />
+                            <InfoBox>
+                                <Text style={[styles.infoText, textColor]}>{t('manualSync:syncingYourAccount')}</Text>
+                                <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
+                                    {t('manualSync:thisMayTake')}
+                                </Text>
+                                <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
+                                    {t('manualSync:doNotClose')}
+                                </Text>
+                            </InfoBox>
                             <ActivityIndicator
                                 animating={isSyncing}
                                 style={styles.activityIndicator}
@@ -188,8 +174,7 @@ export class ManualSync extends Component {
 
 const mapStateToProps = (state) => ({
     isSyncing: state.ui.isSyncing,
-    password: state.wallet.password,
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     selectedAccountName: getSelectedAccountName(state),
     selectedAccountMeta: getSelectedAccountMeta(state),
     shouldPreventAction: shouldPreventAction(state),

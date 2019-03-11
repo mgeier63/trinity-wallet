@@ -1,3 +1,4 @@
+import size from 'lodash/size';
 import { withNamespaces } from 'react-i18next';
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
@@ -5,17 +6,21 @@ import authenticator from 'authenticator';
 import PropTypes from 'prop-types';
 import KeepAwake from 'react-native-keep-awake';
 import SplashScreen from 'react-native-splash-screen';
-import { Navigation } from 'react-native-navigation';
-import { Linking, StyleSheet, View } from 'react-native';
+import { navigator } from 'libs/navigation';
+import { Linking, StyleSheet } from 'react-native';
+import timer from 'react-native-timer';
 import { parseAddress } from 'shared-modules/libs/iota/utils';
 import { setFullNode } from 'shared-modules/actions/settings';
-import { setPassword, setSetting, setDeepLink } from 'shared-modules/actions/wallet';
-import { setUserActivity, setLoginPasswordField, setLoginRoute } from 'shared-modules/actions/ui';
+import { setSetting, setDeepLink } from 'shared-modules/actions/wallet';
+import { setUserActivity, setLoginRoute } from 'shared-modules/actions/ui';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { generateAlert } from 'shared-modules/actions/alerts';
-import WithBackPressCloseApp from 'ui/components/BackPressCloseApp';
+import { getSelectedAccountName, getSelectedAccountMeta } from 'shared-modules/selectors/accounts';
 import NodeOptionsOnLogin from 'ui/views/wallet/NodeOptionsOnLogin';
 import EnterPasswordOnLoginComponent from 'ui/components/EnterPasswordOnLogin';
+import AnimatedComponent from 'ui/components/AnimatedComponent';
 import Enter2FAComponent from 'ui/components/Enter2FA';
+import SeedStore from 'libs/SeedStore';
 import { authorize, getTwoFactorAuthKeyFromKeychain, hash } from 'libs/keychain';
 import { isAndroid } from 'libs/device';
 import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
@@ -31,10 +36,6 @@ const styles = StyleSheet.create({
 /** Login component */
 class Login extends Component {
     static propTypes = {
-        /** Set new password hash
-         * @param {string} passwordHash
-         */
-        setPassword: PropTypes.func.isRequired,
         /** @ignore */
         generateAlert: PropTypes.func.isRequired,
         /** @ignore */
@@ -45,15 +46,11 @@ class Login extends Component {
         // eslint-disable-next-line react/no-unused-prop-types
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
+        /** @ignore */
+        yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
         /** @ignore */
         setUserActivity: PropTypes.func.isRequired,
-        /** @ignore */
-        setLoginPasswordField: PropTypes.func.isRequired,
-        /** @ignore */
-        password: PropTypes.string.isRequired,
-        /** Hash for wallet's password */
-        pwdHash: PropTypes.object.isRequired,
         /** @ignore */
         t: PropTypes.func.isRequired,
         /** @ignore */
@@ -65,17 +62,24 @@ class Login extends Component {
         /** @ignore */
         isFingerprintEnabled: PropTypes.bool.isRequired,
         /** @ignore */
+        completedMigration: PropTypes.bool.isRequired,
+        /** @ignore */
         forceUpdate: PropTypes.bool.isRequired,
     };
 
     constructor(props) {
         super(props);
 
+        this.state = {
+            nextLoginRoute: props.loginRoute,
+            password: null,
+        };
+
         this.onComplete2FA = this.onComplete2FA.bind(this);
         this.onLoginPress = this.onLoginPress.bind(this);
         this.setDeepUrl = this.setDeepUrl.bind(this);
 
-        applyYubikeyMixinMobile(this, props.yubikeySettings);
+         applyYubikeyMixinMobile(this, props.yubikeySlot, props.yubikeyAndroidReaderMode);
     }
 
     componentWillMount() {
@@ -90,9 +94,27 @@ class Login extends Component {
         this.props.setUserActivity({ inactive: false });
     }
 
+    componentWillReceiveProps(newProps) {
+        if (this.props.loginRoute !== newProps.loginRoute) {
+            this.animationOutType = this.getAnimation(this.props.loginRoute, newProps.loginRoute, false);
+            this.animationInType = this.getAnimation(this.props.loginRoute, newProps.loginRoute);
+            timer.setTimeout(
+                'delayRouteChange' + newProps.loginRoute,
+                () => {
+                    this.setState({ nextLoginRoute: newProps.loginRoute });
+                },
+                150,
+            );
+        }
+    }
+
     componentWillUnmount() {
         Linking.removeEventListener('url');
+        timer.clearTimeout('delayRouteChange' + this.props.loginRoute);
+        timer.clearTimeout('delayNavigation');
+        delete this.state.password;
     }
+
 
     /**
      * Validates password and logs in user if accepted
@@ -101,12 +123,20 @@ class Login extends Component {
      * @returns {Promise<void>}
      */
     async onLoginPress(unused, yubikeyHashedPassword = null) {
-        const { t, is2FAEnabled, hasConnection, password, forceUpdate } = this.props;
+        const {
+            t,
+            is2FAEnabled,
+            hasConnection,
+            forceUpdate,
+            completedMigration,
+            selectedAccountMeta,
+            selectedAccountName,
+        } = this.props;
         if (!hasConnection || forceUpdate) {
             return;
         }
-
-        if (!password) {
+        this.animationOutType = ['fadeOut'];
+        if (size(this.state.password) === 0) {
             this.props.generateAlert('error', t('emptyPassword'), t('emptyPasswordExplanation'));
         } else {
             //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
@@ -114,25 +144,23 @@ class Login extends Component {
                 return;
             }
 
-            let passwordHash = null;
+            let pwdHash = null;
 
             if (yubikeyHashedPassword !== null) {
-                passwordHash = yubikeyHashedPassword;
+                pwdHash = yubikeyHashedPassword;
             } else {
-                try {
-                    passwordHash = await hash(password);
-                } catch (err) {
-                    generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
-                }
+                pwdHash = await hash(this.state.password);
             }
 
             try {
-                await authorize(passwordHash);
-
-                this.props.setPassword(passwordHash);
-                this.props.setLoginPasswordField('');
+                await authorize(pwdHash);
+                const seedStore = await new SeedStore[selectedAccountMeta.type](pwdHash, selectedAccountName);
+                // FIXME: To be deprecated
+                const completedSeedMigration = typeof (await seedStore.getSeeds())[selectedAccountName] !== 'string';
+                global.passwordHash = pwdHash;
+                delete this.state.password;
                 if (!is2FAEnabled) {
-                    this.navigateToLoading();
+                    this.navigateTo(completedMigration && completedSeedMigration ? 'loading' : 'migration');
                 } else {
                     this.props.setLoginRoute('complete2FA');
                 }
@@ -143,20 +171,23 @@ class Login extends Component {
                     t('global:unrecognisedPasswordExplanation'),
                 );
             }
+
+
         }
     }
+
 
     /**
      * Validates 2FA token and logs in user if accepted
      * @method onComplete2FA
      */
     async onComplete2FA(token) {
-        const { t, pwdHash, hasConnection } = this.props;
+        const { t, hasConnection, completedMigration } = this.props;
         if (!hasConnection) {
             return;
         }
         if (token) {
-            const key = await getTwoFactorAuthKeyFromKeychain(pwdHash);
+            let key = await getTwoFactorAuthKeyFromKeychain(global.passwordHash);
             if (key === null) {
                 this.props.generateAlert(
                     'error',
@@ -166,13 +197,36 @@ class Login extends Component {
             }
             const verified = authenticator.verifyToken(key, token);
             if (verified) {
-                this.navigateToLoading();
-                this.props.setLoginRoute('login');
+                this.navigateTo(completedMigration ? 'loading' : 'migration');
+                key = null;
             } else {
                 this.props.generateAlert('error', t('twoFA:wrongCode'), t('twoFA:wrongCodeExplanation'));
             }
         } else {
             this.props.generateAlert('error', t('twoFA:emptyCode'), t('twoFA:emptyCodeExplanation'));
+        }
+    }
+
+    /**
+     * Gets animation according to current and next login route
+     *
+     * @param {string} currentLoginRoute
+     * @param {string} nextLoginRoute
+     * @param {bool} animationIn
+     * @returns {object}
+     */
+    getAnimation(currentLoginRoute, nextLoginRoute, animationIn = true) {
+        const routes = ['login', 'nodeOptions', 'customNode', 'nodeSelection', 'complete2FA'];
+        if (routes.indexOf(currentLoginRoute) < routes.indexOf(nextLoginRoute)) {
+            if (animationIn) {
+                return ['slideInRightSmall', 'fadeIn'];
+            }
+            return ['slideOutLeftSmall', 'fadeOut'];
+        } else if (routes.indexOf(currentLoginRoute) > routes.indexOf(nextLoginRoute)) {
+            if (animationIn) {
+                return ['slideInLeftSmall', 'fadeIn'];
+            }
+            return ['slideOutRightSmall', 'fadeOut'];
         }
     }
 
@@ -192,36 +246,19 @@ class Login extends Component {
     }
 
     /**
-     * Navigates to loading screen
-     * @method navigateToLoading
+     * Navigates to provided screen
+     * @method navigateTo
+     *
+     * @param {string} name
      */
-    navigateToLoading() {
-        const { theme: { body } } = this.props;
-        Navigation.setStackRoot('appStack', {
-            component: {
-                name: 'loading',
-                options: {
-                    animations: {
-                        setStackRoot: {
-                            enable: false,
-                        },
-                    },
-                    layout: {
-                        backgroundColor: body.bg,
-                        orientation: ['portrait'],
-                    },
-                    topBar: {
-                        visible: false,
-                        drawBehind: true,
-                        elevation: 0,
-                    },
-                    statusBar: {
-                        drawBehind: true,
-                        backgroundColor: body.bg,
-                    },
-                },
+    navigateTo(name) {
+        timer.setTimeout(
+            'delayNavigation',
+            () => {
+                navigator.setStackRoot(name);
             },
-        });
+            150,
+        );
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
@@ -253,68 +290,71 @@ class Login extends Component {
         }
     }
 
+
     render() {
-        const { theme, password, loginRoute, isFingerprintEnabled } = this.props;
+        const { theme, isFingerprintEnabled } = this.props;
+        const { nextLoginRoute } = this.state;
         const body = theme.body;
 
         return (
-            <View style={[styles.container, { backgroundColor: body.bg }]}>
-                {this.renderYubikey()}
-
-                {loginRoute === 'login' &&
-                    this.isYubikeyIdle() && (
-                        <EnterPasswordOnLoginComponent
-                            theme={theme}
-                            onLoginPress={this.onLoginPress}
-                            navigateToNodeOptions={() => this.props.setLoginRoute('nodeOptions')}
-                            setLoginPasswordField={(pword) => this.props.setLoginPasswordField(pword)}
-                            password={password}
-                            isFingerprintEnabled={isFingerprintEnabled}
-                        />
-                    )}
-                {loginRoute === 'complete2FA' &&
-                    this.isYubikeyIdle() && (
-                        <Enter2FAComponent
-                            verify={this.onComplete2FA}
-                            cancel={() => this.props.setLoginRoute('login')}
-                            theme={theme}
-                        />
-                    )}
-                {loginRoute !== 'complete2FA' &&
-                    loginRoute !== 'login' &&
-                    this.isYubikeyIdle() && <NodeOptionsOnLogin />}
-            </View>
+            <AnimatedComponent
+                animateOnMount={false}
+                animationInType={this.animationInType}
+                animationOutType={this.animationOutType}
+                animateInTrigger={this.state.nextLoginRoute}
+                animateOutTrigger={this.props.loginRoute}
+                duration={150}
+                style={[styles.container, { backgroundColor: body.bg }]}
+            >
+                {nextLoginRoute === 'login' && this.isYubikeyIdle() && (
+                    <EnterPasswordOnLoginComponent
+                        theme={theme}
+                        onLoginPress={this.onLoginPress}
+                        navigateToNodeOptions={() => this.props.setLoginRoute('nodeOptions')}
+                        setLoginPasswordField={(password) => this.setState({ password })}
+                        password={this.state.password}
+                        isFingerprintEnabled={isFingerprintEnabled}
+                    />
+                )}
+                {nextLoginRoute === 'complete2FA' && this.isYubikeyIdle() && (
+                    <Enter2FAComponent
+                        verify={this.onComplete2FA}
+                        cancel={() => this.props.setLoginRoute('login')}
+                        theme={theme}
+                    />
+                )}
+                {nextLoginRoute !== 'complete2FA' &&
+                nextLoginRoute !== 'login' && <NodeOptionsOnLogin loginRoute={nextLoginRoute} />}
+            </AnimatedComponent>
         );
     }
+
 }
 
 const mapStateToProps = (state) => ({
     node: state.settings.node,
     nodes: state.settings.nodes,
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     is2FAEnabled: state.settings.is2FAEnabled,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
-    accountInfo: state.accounts.accountInfo,
-    password: state.ui.loginPasswordFieldText,
-    pwdHash: state.wallet.password,
+    yubikeySlot: state.settings.yubikeySlot,
+    yubikeyAndroidReaderMode: state.settings.yubikeyAndroidReaderMode,
     loginRoute: state.ui.loginRoute,
     hasConnection: state.wallet.hasConnection,
     isFingerprintEnabled: state.settings.isFingerprintEnabled,
+    completedMigration: state.settings.completedMigration,
     forceUpdate: state.wallet.forceUpdate,
+    selectedAccountName: getSelectedAccountName(state),
+    selectedAccountMeta: getSelectedAccountMeta(state),
 });
 
 const mapDispatchToProps = {
     generateAlert,
-    setPassword,
     setFullNode,
     setSetting,
     setUserActivity,
-    setLoginPasswordField,
     setDeepLink,
     setLoginRoute,
 };
 
-export default WithBackPressCloseApp()(
-    withNamespaces(['login', 'global', 'twoFA'])(connect(mapStateToProps, mapDispatchToProps)(Login)),
-);
+export default withNamespaces(['login', 'global', 'twoFA'])(connect(mapStateToProps, mapDispatchToProps)(Login));

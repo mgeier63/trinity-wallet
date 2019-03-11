@@ -1,8 +1,7 @@
-import isEqual from 'lodash/isEqual';
 import React, { Component } from 'react';
 import { withNamespaces } from 'react-i18next';
 import PropTypes from 'prop-types';
-import { Linking, StyleSheet, View, KeyboardAvoidingView, Animated, Keyboard } from 'react-native';
+import { Linking, StyleSheet, View, KeyboardAvoidingView, Animated } from 'react-native';
 import {
     shouldTransitionForSnapshot,
     hasDisplayedSnapshotTransitionGuide,
@@ -11,24 +10,22 @@ import {
 import { connect } from 'react-redux';
 import { changeHomeScreenRoute, toggleTopBarDisplay } from 'shared-modules/actions/home';
 import { markTaskAsDone } from 'shared-modules/actions/accounts';
-import { setPassword, setSetting, setDeepLink } from 'shared-modules/actions/wallet';
+import { setSetting, setDeepLink } from 'shared-modules/actions/wallet';
 import { setUserActivity, toggleModalActivity } from 'shared-modules/actions/ui';
 import { generateAlert } from 'shared-modules/actions/alerts';
 import { parseAddress } from 'shared-modules/libs/iota/utils';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import timer from 'react-native-timer';
-import { hash } from 'libs/keychain';
 import UserInactivity from 'ui/components/UserInactivity';
 import TopBar from 'ui/components/TopBar';
 import WithUserActivity from 'ui/components/UserActivity';
-import WithBackPress from 'ui/components/BackPress';
+import WithLogout from 'ui/components/Logout';
 import PollComponent from 'ui/components/Poll';
 import Tabs from 'ui/components/Tabs';
 import Tab from 'ui/components/Tab';
 import TabContent from 'ui/components/TabContent';
 import EnterPassword from 'ui/components/EnterPassword';
-import { height } from 'libs/dimensions';
-import { isAndroid, isIPhoneX } from 'libs/device';
-import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
+import { isAndroid } from 'libs/device';
 
 const styles = StyleSheet.create({
     midContainer: {
@@ -59,8 +56,6 @@ class Home extends Component {
         inactive: PropTypes.bool.isRequired,
         /** @ignore */
         minimised: PropTypes.bool.isRequired,
-        /** Hash for wallet's password */
-        storedPasswordHash: PropTypes.object.isRequired,
         /** @ignore */
         isTransitioning: PropTypes.bool.isRequired,
         /** @ignore */
@@ -96,36 +91,22 @@ class Home extends Component {
         /** Currently selected account name */
         selectedAccountName: PropTypes.string.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        currentRoute: PropTypes.string.isRequired,
         /** @ignore */
-        // eslint-disable-next-line react/no-unused-prop-types
-        is2FAEnabledYubikey: PropTypes.bool.isRequired,
+        isKeyboardActive: PropTypes.bool.isRequired,
+        /** Triggered when login from inactivity is pressed */
+        onInactivityLoginPress: PropTypes.func.isRequired,
+        /** Clears temporary wallet data and navigates to login screen */
+        logout: PropTypes.func.isRequired,
     };
 
     constructor(props) {
         super(props);
-
-        applyYubikeyMixinMobile(this, props.yubikeySettings);
-
-        this.onLoginPress = this.onLoginPress.bind(this);
         this.setDeepUrl = this.setDeepUrl.bind(this);
         this.viewFlex = new Animated.Value(0.7);
-        this.topBarHeight = isAndroid ? null : new Animated.Value(height / 8.8);
-
-        this.state = {
-            isKeyboardActive: false,
-        };
     }
 
     componentWillMount() {
-        if (!isAndroid) {
-            this.keyboardWillShowSub = Keyboard.addListener('keyboardWillShow', this.keyboardWillShow);
-            this.keyboardWillHideSub = Keyboard.addListener('keyboardWillHide', this.keyboardWillHide);
-        }
-        if (isAndroid) {
-            this.keyboardWillShowSub = Keyboard.addListener('keyboardDidShow', this.keyboardDidShow);
-            this.keyboardWillHideSub = Keyboard.addListener('keyboardDidHide', this.keyboardDidHide);
-        }
         this.deepLinkSub = Linking.addEventListener('url', this.setDeepUrl);
     }
 
@@ -134,28 +115,41 @@ class Home extends Component {
         this.displayUpdates();
     }
 
+    componentWillReceiveProps(newProps) {
+        if (!this.props.isKeyboardActive && newProps.isKeyboardActive && !this.props.isModalActive) {
+            this.handleCloseTopBar();
+            Animated.timing(this.viewFlex, {
+                duration: isAndroid ? 100 : 250,
+                toValue: 0.2,
+            }).start();
+        }
+        if (this.props.isKeyboardActive && !newProps.isKeyboardActive) {
+            Animated.timing(this.viewFlex, {
+                duration: isAndroid ? 100 : 250,
+                toValue: 0.7,
+            }).start();
+        }
+        if (this.props.inactive && !newProps.inactive) {
+            this.userInactivity.setActiveFromComponent();
+        }
+    }
+
     shouldComponentUpdate(newProps) {
         const { isSyncing, isSendingTransfer, isTransitioning } = this.props;
-
         if (isSyncing !== newProps.isSyncing) {
             return false;
         }
-
         if (isSendingTransfer !== newProps.isSendingTransfer) {
             return false;
         }
-
         if (isTransitioning !== newProps.isTransitioning) {
             return false;
         }
-
         return true;
     }
 
     componentWillUnmount() {
         const { isModalActive } = this.props;
-        this.keyboardWillShowSub.remove();
-        this.keyboardWillHideSub.remove();
         Linking.removeEventListener('url');
         if (isModalActive) {
             this.props.toggleModalActivity();
@@ -164,61 +158,23 @@ class Home extends Component {
     }
 
     /**
-     * Validates user provided password and sets wallet state as active
-     * @param {string} password
-     * @returns {Promise<void>}
-     */
-    async onLoginPress(password, yubikeyHashedPassword = null) {
-        const { t, storedPasswordHash } = this.props;
-        if (!password && !yubikeyHashedPassword) {
-            return this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
-        }
-
-        //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
-        this._password = password;
-        if (this.shouldStartYubikey(yubikeyHashedPassword === null)) {
-            return;
-        }
-        this._password = null;
-
-        let passwordHash = null;
-
-        if (yubikeyHashedPassword !== null) {
-            passwordHash = yubikeyHashedPassword;
-        } else {
-            try {
-                passwordHash = await hash(password);
-            } catch (err) {
-                generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
-            }
-        }
-
-        if (!isEqual(passwordHash, storedPasswordHash)) {
-            this.props.generateAlert(
-                'error',
-                t('global:unrecognisedPassword'),
-                t('global:unrecognisedPasswordExplanation'),
-            );
-        } else {
-            this.props.setUserActivity({ inactive: false });
-            this.userInactivity.setActiveFromComponent();
-        }
-    }
-
-    /**
      * Changes home screen child route
      * @param {string} name
      */
-    onTabSwitch(name) {
+    onTabSwitch(nextRoute) {
         const { isSyncing, isTransitioning, isCheckingCustomNode } = this.props;
-
         this.userInactivity.setActiveFromComponent();
 
         if (isTransitioning) {
             return;
         }
-
-        this.props.changeHomeScreenRoute(name);
+        // Set tab animation in type according to relative position of next active tab
+        const routes = ['balance', 'send', 'receive', 'history', 'settings'];
+        this.tabAnimationInType =
+            routes.indexOf(nextRoute) < routes.indexOf(this.props.currentRoute)
+                ? ['slideInLeftSmall', 'fadeIn']
+                : ['slideInRightSmall', 'fadeIn'];
+        this.props.changeHomeScreenRoute(nextRoute);
 
         if (!isSyncing && !isCheckingCustomNode) {
             this.resetSettings();
@@ -233,37 +189,6 @@ class Home extends Component {
             this.props.changeHomeScreenRoute('send');
         } else {
             generateAlert('error', t('send:invalidAddress'), t('send:invalidAddressExplanation1'));
-        }
-    }
-
-    async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings } = this.props;
-
-        let passwordHash = null;
-        try {
-            passwordHash = await hash(this._password);
-            this._password = null;
-        } catch (err) {
-            //console.error(err);
-            postError(t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
-            return;
-        }
-
-        try {
-            const pwYubiHashed = await this.doChallengeResponseThenSaltedHash(passwordHash);
-
-            if (pwYubiHashed !== null) {
-                postResultDelayed(async () => {
-                    this.onLoginPress(null, pwYubiHashed);
-                });
-                return;
-            }
-        } catch (err2) {
-            postError(
-                t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
-            );
-            return;
         }
     }
 
@@ -299,59 +224,13 @@ class Home extends Component {
         }
     };
 
-    keyboardWillShow = (event) => {
-        const { inactive, minimised } = this.props;
-        if (inactive || minimised) {
-            return;
-        }
-        this.handleCloseTopBar();
-        this.setState({ isKeyboardActive: true });
-        Animated.timing(this.viewFlex, {
-            duration: event.duration,
-            toValue: 0.2,
-        }).start();
-        Animated.timing(this.topBarHeight, {
-            duration: event.duration,
-            toValue: isIPhoneX ? 0 : 20,
-        }).start();
-    };
-
-    keyboardWillHide = (event) => {
-        timer.setTimeout('iOSKeyboardTimeout', () => this.setState({ isKeyboardActive: false }), event.duration);
-        Animated.timing(this.viewFlex, {
-            duration: event.duration,
-            toValue: 0.7,
-        }).start();
-        Animated.timing(this.topBarHeight, {
-            duration: event.duration,
-            toValue: height / 8.8,
-        }).start();
-    };
-
-    keyboardDidShow = () => {
-        const { inactive, minimised } = this.props;
-        if (inactive || minimised) {
-            return;
-        }
-        this.handleCloseTopBar();
-        this.topBarHeight = 20;
-        this.viewFlex = 0.2;
-        this.setState({ isKeyboardActive: true });
-    };
-
-    keyboardDidHide = () => {
-        this.topBarHeight = height / 8.8;
-        this.viewFlex = 0.7;
-        this.setState({ isKeyboardActive: false });
-    };
-
     /**
      * Mark the task of displaying snapshot transition modal as done
      */
     completeTransitionTask() {
         this.props.markTaskAsDone({
             accountName: this.props.selectedAccountName,
-            task: 'hasDisplayedTransitionGuide',
+            task: 'displayedSnapshotTransitionGuide',
         });
         if (this.props.isModalActive) {
             this.props.toggleModalActivity();
@@ -377,8 +256,15 @@ class Home extends Component {
     }
 
     render() {
-        const { t, inactive, minimised, isFingerprintEnabled, theme: { body, negative, positive }, theme } = this.props;
-        const { isKeyboardActive } = this.state;
+        const {
+            t,
+            inactive,
+            minimised,
+            isFingerprintEnabled,
+            theme: { body, negative, positive },
+            theme,
+            isKeyboardActive,
+        } = this.props;
         const textColor = { color: body.color };
 
         return (
@@ -387,86 +273,77 @@ class Home extends Component {
                     this.userInactivity = c;
                 }}
                 timeForInactivity={300000}
-                checkInterval={2000}
+                timeForLogout={1800000}
+                checkInterval={3000}
                 onInactivity={this.handleInactivity}
+                logout={this.props.logout}
             >
                 <View style={{ flex: 1, backgroundColor: body.bg }}>
-                    {this.renderYubikey()}
-
-                    {!inactive &&
-                        this.isYubikeyIdle() && (
-                            <View style={{ flex: 1 }}>
-                                {(!minimised && (
-                                    <KeyboardAvoidingView style={styles.midContainer} behavior="padding">
-                                        <Animated.View useNativeDriver style={{ flex: this.viewFlex }} />
-                                        <View style={{ flex: 4.72 }}>
-                                            <TabContent
-                                                onTabSwitch={(name) => this.onTabSwitch(name)}
-                                                handleCloseTopBar={() => this.handleCloseTopBar()}
-                                                isKeyboardActive={isKeyboardActive}
-                                            />
-                                        </View>
-                                    </KeyboardAvoidingView>
-                                )) || <View style={styles.midContainer} />}
-                                <View style={styles.bottomContainer}>
-                                    <Tabs onPress={(name) => this.onTabSwitch(name)} theme={theme}>
-                                        <Tab
-                                            name="balance"
-                                            icon="wallet"
-                                            theme={theme}
-                                            text={t('home:balance').toUpperCase()}
+                    {(!inactive && (
+                        <View style={{ flex: 1 }}>
+                            {(!minimised && (
+                                <KeyboardAvoidingView
+                                    enabled={isKeyboardActive}
+                                    style={styles.midContainer}
+                                    behavior="padding"
+                                >
+                                    <Animated.View useNativeDriver style={{ flex: this.viewFlex }} />
+                                    <View style={{ flex: 4.72 }}>
+                                        <TabContent
+                                            onTabSwitch={(name) => this.onTabSwitch(name)}
+                                            handleCloseTopBar={() => this.handleCloseTopBar()}
                                         />
-                                        <Tab
-                                            name="send"
-                                            icon="send"
-                                            theme={theme}
-                                            text={t('home:send').toUpperCase()}
-                                        />
-                                        <Tab
-                                            name="receive"
-                                            icon="receive"
-                                            theme={theme}
-                                            text={t('home:receive').toUpperCase()}
-                                        />
-                                        <Tab
-                                            name="history"
-                                            icon="history"
-                                            theme={theme}
-                                            text={t('home:history').toUpperCase()}
-                                        />
-                                        <Tab
-                                            name="settings"
-                                            icon="settings"
-                                            theme={theme}
-                                            text={t('home:settings').toUpperCase()}
-                                        />
-                                    </Tabs>
-                                </View>
-                                <TopBar
-                                    minimised={minimised}
-                                    isKeyboardActive={isKeyboardActive}
-                                    topBarHeight={this.topBarHeight}
-                                />
+                                    </View>
+                                </KeyboardAvoidingView>
+                            )) || <View style={styles.midContainer} />}
+                            <View style={styles.bottomContainer}>
+                                <Tabs onPress={(name) => this.onTabSwitch(name)} theme={theme}>
+                                    <Tab
+                                        name="balance"
+                                        icon="wallet"
+                                        theme={theme}
+                                        text={t('home:balance').toUpperCase()}
+                                    />
+                                    <Tab name="send" icon="send" theme={theme} text={t('home:send').toUpperCase()} />
+                                    <Tab
+                                        name="receive"
+                                        icon="receive"
+                                        theme={theme}
+                                        text={t('home:receive').toUpperCase()}
+                                    />
+                                    <Tab
+                                        name="history"
+                                        icon="history"
+                                        theme={theme}
+                                        text={t('home:history').toUpperCase()}
+                                    />
+                                    <Tab
+                                        name="settings"
+                                        icon="settings"
+                                        theme={theme}
+                                        text={t('home:settings').toUpperCase()}
+                                    />
+                                </Tabs>
                             </View>
-                        )}
-                    {inactive &&
-                        this.isYubikeyIdle() && (
-                            <View style={[styles.inactivityLogoutContainer, { backgroundColor: body.bg }]}>
-                                <EnterPassword
-                                    onLoginPress={this.onLoginPress}
-                                    backgroundColor={body.bg}
-                                    negativeColor={negative.color}
-                                    positiveColor={positive.color}
-                                    bodyColor={body.color}
-                                    textColor={textColor}
-                                    setUserActive={() => this.props.setUserActivity({ inactive: false })}
-                                    generateAlert={(error, title, explanation) =>
-                                        this.props.generateAlert(error, title, explanation)
-                                    }
-                                    isFingerprintEnabled={isFingerprintEnabled}
-                                />
-                            </View>
-                        )}
+                            <TopBar minimised={minimised} />
+                        </View>
+                    )) || (
+                        <View style={[styles.inactivityLogoutContainer, { backgroundColor: body.bg }]}>
+                            <EnterPassword
+                                onLoginPress={this.props.onInactivityLoginPress}
+                                backgroundColor={body.bg}
+                                negativeColor={negative.color}
+                                positiveColor={positive.color}
+                                bodyColor={body.color}
+                                textColor={textColor}
+                                setUserActive={() => this.props.setUserActivity({ inactive: false })}
+                                generateAlert={(error, title, explanation) =>
+                                    this.props.generateAlert(error, title, explanation)
+                                }
+                                isFingerprintEnabled={isFingerprintEnabled}
+                            />
+                        </View>
+                    )}
                     <PollComponent />
                 </View>
             </UserInactivity>
@@ -475,29 +352,27 @@ class Home extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    storedPasswordHash: state.wallet.password,
     inactive: state.ui.inactive,
     minimised: state.ui.minimised,
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     isSyncing: state.ui.isSyncing,
     isCheckingCustomNode: state.ui.isCheckingCustomNode,
     isSendingTransfer: state.ui.isSendingTransfer,
     isTransitioning: state.ui.isTransitioning,
     currentSetting: state.wallet.currentSetting,
     isTopBarActive: state.home.isTopBarActive,
+    currentRoute: state.home.childRoute,
     isFingerprintEnabled: state.settings.isFingerprintEnabled,
     isModalActive: state.ui.isModalActive,
     shouldTransitionForSnapshot: shouldTransitionForSnapshot(state),
     hasDisplayedSnapshotTransitionGuide: hasDisplayedSnapshotTransitionGuide(state),
     selectedAccountName: getSelectedAccountName(state),
-    yubikeySettings: state.settings.yubikey,
-    is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
+    isKeyboardActive: state.ui.isKeyboardActive,
 });
 
 const mapDispatchToProps = {
     changeHomeScreenRoute,
     generateAlert,
-    setPassword,
     setUserActivity,
     setSetting,
     toggleTopBarDisplay,
@@ -507,5 +382,5 @@ const mapDispatchToProps = {
 };
 
 export default WithUserActivity()(
-    WithBackPress()(withNamespaces(['home', 'global', 'login'])(connect(mapStateToProps, mapDispatchToProps)(Home))),
+    WithLogout()(withNamespaces(['home', 'global', 'login'])(connect(mapStateToProps, mapDispatchToProps)(Home))),
 );

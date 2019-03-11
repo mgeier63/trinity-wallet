@@ -8,7 +8,6 @@ import { connect } from 'react-redux';
 import { withNamespaces } from 'react-i18next';
 import { toggleTopBarDisplay } from 'shared-modules/actions/home';
 import { setSeedIndex } from 'shared-modules/actions/wallet';
-import { clearLog } from 'shared-modules/actions/alerts';
 import { toggleModalActivity } from 'shared-modules/actions/ui';
 import {
     getBalanceForSelectedAccount,
@@ -16,7 +15,6 @@ import {
     selectAccountInfo,
 } from 'shared-modules/selectors/accounts';
 import {
-    StatusBar,
     View,
     Text,
     StyleSheet,
@@ -28,20 +26,22 @@ import {
 } from 'react-native';
 import tinycolor from 'tinycolor2';
 import { setPollFor } from 'shared-modules/actions/polling';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { roundDown } from 'shared-modules/libs/utils';
 import { formatValue, formatUnit } from 'shared-modules/libs/iota/utils';
+import { accumulateBalance } from 'shared-modules/libs/iota/addresses';
 import { Icon } from 'ui/theme/icons';
 import { isAndroid, isIPhoneX } from 'libs/device';
 import { Styling } from 'ui/theme/general';
+import NotificationButtonComponent from 'ui/components/NotificationButton';
 
 const { height, width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
     container: {
         width,
-        elevation: 7,
         flexDirection: 'row',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
         alignItems: 'center',
         flex: 1,
     },
@@ -64,36 +64,37 @@ const styles = StyleSheet.create({
     childView: {
         height: height / 14,
         width,
-        paddingHorizontal: width / 18,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        paddingHorizontal: width / 27,
     },
     centralView: {
         alignItems: 'center',
     },
-    chevronWrapper: {
-        justifyContent: 'center',
+    barWrapper: {
+        width,
+        flexDirection: 'row',
         alignItems: 'center',
-        marginRight: width / 18,
+        justifyContent: 'center',
+        height: Styling.topBarHeight - Styling.statusBarHeight,
     },
-    notificationContainer: {
+    balanceWrapper: {
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: width / 18,
+        width: width - width / 4.5,
+    },
+    iconWrapper: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: width / 9,
+        flex: 1,
     },
     disabled: {
         color: '#a9a9a9',
     },
-    disabledImage: {
-        color: '#a9a9a9',
-    },
     scrollViewContainer: {
         maxHeight: height,
-    },
-    empty: {
-        height: width / 18,
-        width: width / 18,
     },
 });
 
@@ -130,12 +131,6 @@ class TopBar extends Component {
         /** @ignore */
         setPollFor: PropTypes.func.isRequired,
         /** @ignore */
-        notificationLog: PropTypes.array.isRequired,
-        /** @ignore */
-        clearLog: PropTypes.func.isRequired,
-        /** Top bar height */
-        topBarHeight: PropTypes.oneOfType([PropTypes.number, PropTypes.object]),
-        /** Determines if on screen keyboard is active */
         isKeyboardActive: PropTypes.bool.isRequired,
         /** @ignore */
         isTransitioning: PropTypes.bool.isRequired,
@@ -149,6 +144,8 @@ class TopBar extends Component {
         currentRoute: PropTypes.string.isRequired,
         /** @ignore */
         toggleModalActivity: PropTypes.func.isRequired,
+        /** @ignore */
+        isModalActive: PropTypes.bool.isRequired,
     };
 
     static filterSeedTitles(accountNames, currentSeedIndex) {
@@ -185,6 +182,7 @@ class TopBar extends Component {
         this.state = {
             scrollable: false,
         };
+        this.topBarHeight = new Animated.Value(Styling.topBarHeight - Styling.statusBarHeight);
     }
 
     componentDidMount() {
@@ -201,13 +199,26 @@ class TopBar extends Component {
                 this.props.toggleTopBarDisplay();
             }
         }
-
         if (this.props.currentSetting !== newProps.currentSetting) {
             // Detects if navigating across screens
             if (this.props.isTopBarActive) {
                 // In case the dropdown is active
                 this.props.toggleTopBarDisplay();
             }
+        }
+        // Minimises topBar if keyboard is open
+        if (!this.props.isKeyboardActive && newProps.isKeyboardActive && !this.props.isModalActive) {
+            Animated.timing(this.topBarHeight, {
+                duration: isAndroid ? 50 : 250,
+                toValue: isIPhoneX ? 0 : 20,
+            }).start();
+        }
+        // Maximises topBar if keyboard is closed
+        if (this.props.isKeyboardActive && !newProps.isKeyboardActive) {
+            Animated.timing(this.topBarHeight, {
+                duration: isAndroid ? 50 : 250,
+                toValue: Styling.topBarHeight - Styling.statusBarHeight,
+            }).start();
         }
     }
 
@@ -219,7 +230,7 @@ class TopBar extends Component {
      */
     onChange(newSeedIdx) {
         const { isGeneratingReceiveAddress } = this.props;
-        const hasAddresses = Object.keys(this.props.selectedAccount.addresses).length > 0;
+        const hasAddresses = Object.keys(this.props.selectedAccount.addressData).length > 0;
 
         // TODO: Not sure why we are checking for address generation on change
         if (!isGeneratingReceiveAddress) {
@@ -231,49 +242,39 @@ class TopBar extends Component {
         }
     }
 
+    /**
+     * Makes dropdown scrollable when it exceeds max length
+     *
+     * @method setScrollable
+     * @returns {any}
+     */
     setScrollable(y) {
-        if (y >= height - height / 8.8) {
+        if (
+            y >=
+            (isIPhoneX
+                ? height - Styling.topBarHeight - Styling.iPhoneXBottomInsetHeight
+                : height - Styling.topBarHeight)
+        ) {
             return this.setState({ scrollable: true });
         }
         this.setState({ scrollable: false });
     }
 
     /**
-     * Determines when to disable topbar press events
+     * Determines when to disable topBar press events
      *
      * @method shouldDisable
      * @returns {boolean}
      */
     shouldDisable() {
-        const {
-            isGeneratingReceiveAddress,
-            isSendingTransfer,
-            isSyncing,
-            isTransitioning,
-            isFetchingLatestAccountInfo,
-        } = this.props;
         return (
-            isGeneratingReceiveAddress ||
-            isSendingTransfer ||
-            isSyncing ||
-            isTransitioning ||
-            isFetchingLatestAccountInfo
+            this.props.isGeneratingReceiveAddress ||
+            this.props.isSendingTransfer ||
+            this.props.isSyncing ||
+            this.props.isTransitioning ||
+            this.props.isFetchingLatestAccountInfo ||
+            this.props.isModalActive
         );
-    }
-
-    showModal() {
-        const { isTransitioning, theme: { bar }, notificationLog } = this.props;
-        if (!isTransitioning) {
-            this.props.toggleModalActivity('notificationLog', {
-                backgroundColor: bar.bg,
-                hideModal: () => this.hideModal(),
-                textColor: { color: bar.color },
-                borderColor: { borderColor: bar.color },
-                barColor: bar.color,
-                notificationLog,
-                clearLog: this.props.clearLog,
-            });
-        }
     }
 
     hideModal() {
@@ -288,13 +289,13 @@ class TopBar extends Component {
             accountInfo,
             seedIndex,
             theme: { bar, primary },
-            topBarHeight,
             isKeyboardActive,
-            notificationLog,
             mode,
             minimised,
             currentRoute,
+            isModalActive,
         } = this.props;
+
         const selectedTitle = get(accountNames, `[${seedIndex}]`) || ''; // fallback
         const selectedSubtitle = TopBar.humanizeBalance(balance);
         const subtitleColor = tinycolor(bar.color).isDark() ? '#262626' : '#d3d3d3';
@@ -304,21 +305,29 @@ class TopBar extends Component {
 
         const getBalance = (currentIdx) => {
             const account = accountInfo[accountNames[currentIdx]];
-            return TopBar.humanizeBalance(account.balance);
+
+            return TopBar.humanizeBalance(
+                accumulateBalance(map(account.addressData, (addressObject) => addressObject.balance)),
+            );
         };
 
         const withSubtitles = (title, index) => ({ title, subtitle: getBalance(index), index });
         const titles = map(accountNames, withSubtitles);
         const hasMultipleSeeds = size(TopBar.filterSeedTitles(accountNames, seedIndex));
-        const hasNotifications = size(notificationLog) && notificationLog.length > 0;
         const shouldDisable = this.shouldDisable();
 
         const baseContent = (
-            <Animated.View style={[styles.titleWrapper, { height: topBarHeight } ]}>
+            <Animated.View
+                style={[
+                    styles.titleWrapper,
+                    !isIPhoneX && { marginTop: Styling.statusBarHeight },
+                    { height: this.topBarHeight },
+                ]}
+            >
                 <TouchableWithoutFeedback
                     onPress={() => {
                         if (!shouldDisable) {
-                            if (accountNames.length > 1) {
+                            if (accountNames.length > 1 && !isKeyboardActive) {
                                 this.props.toggleTopBarDisplay();
                             }
                         }
@@ -326,94 +335,55 @@ class TopBar extends Component {
                 >
                     {(!isKeyboardActive &&
                         !minimised && (
-                            <View
-                                style={{
-                                    width,
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    marginTop: isAndroid ? StatusBar.currentHeight : 0,
-                                    paddingBottom: isAndroid ? height / 60 : 0,
-                                }}
-                            >
-                                {hasNotifications && !isKeyboardActive && mode === 'Advanced' ? (
-                                    <TouchableOpacity
-                                        hitSlop={{ left: width / 18, right: width / 18, top: 0, bottom: 0 }}
-                                        style={styles.notificationContainer}
-                                        onPress={() => this.showModal()}
-                                    >
-                                        <Animated.View
-                                            style={{
-                                                height: topBarHeight,
-                                                width: width / 18,
-                                                justifyContent: 'center',
-                                                paddingTop: isAndroid ? 0 : height / 170,
-                                            }}
-                                        >
-                                            <Icon name="notification" size={width / 18} color={bar.color} />
-                                        </Animated.View>
-                                    </TouchableOpacity>
-                                ) : (
-                                    <View style={styles.notificationContainer}>
-                                        <View style={styles.empty} />
-                                    </View>
-                                )}
-                                <View>
+                            <View style={styles.barWrapper}>
+                                <Animated.View style={[styles.iconWrapper, { paddingLeft: width / 18 }]}>
+                                    {(!isKeyboardActive && mode === 'Advanced' && <NotificationButtonComponent />) || (
+                                        <View />
+                                    )}
+                                </Animated.View>
+                                <Animated.View style={styles.balanceWrapper}>
                                     <Text
                                         numberOfLines={1}
                                         style={[
-                                            isAndroid ? null : { marginTop: height / 55 },
                                             shouldDisable
                                                 ? StyleSheet.flatten([
                                                       styles.mainTitle,
                                                       styles.disabled,
                                                       { color: bar.color },
                                                   ])
-                                                : [
-                                                      styles.mainTitle,
-                                                      { color: bar.color },
-                                                      isAndroid ? null : { marginTop: height / 55 },
-                                                  ],
+                                                : [styles.mainTitle, { color: bar.color }],
+                                            isModalActive && { opacity: 0.5 },
                                         ]}
                                     >
                                         {selectedTitle}
                                     </Text>
                                     <View style={{ opacity: balanceOpacity }}>
                                         <Text
-                                            style={
+                                            style={[
                                                 shouldDisable
                                                     ? StyleSheet.flatten([
                                                           styles.subtitle,
                                                           styles.disabled,
                                                           { color: subtitleColor },
                                                       ])
-                                                    : [styles.subtitle, { color: subtitleColor }]
-                                            }
+                                                    : [styles.subtitle, { color: subtitleColor }],
+                                                isModalActive && { opacity: 0.5 },
+                                            ]}
                                         >
                                             {selectedSubtitle}
                                         </Text>
                                     </View>
-                                </View>
-                                <View style={styles.chevronWrapper}>
-                                    {hasMultipleSeeds ? (
-                                        <Animated.View
-                                            style={{
-                                                height: topBarHeight,
-                                                justifyContent: 'center',
-                                                paddingTop: isAndroid ? 0 : height / 170,
-                                            }}
-                                        >
-                                            <Icon
-                                                name={isTopBarActive ? 'chevronUp' : 'chevronDown'}
-                                                size={width / 22}
-                                                color={bar.color}
-                                                style={[shouldDisable ? styles.disabledImage : null]}
-                                            />
-                                        </Animated.View>
-                                    ) : (
-                                        <View style={styles.empty} />
-                                    )}
-                                </View>
+                                </Animated.View>
+                                <Animated.View style={[styles.iconWrapper, { paddingRight: width / 18 }]}>
+                                    {(hasMultipleSeeds && (
+                                        <Icon
+                                            name={isTopBarActive ? 'chevronUp' : 'chevronDown'}
+                                            size={width / 22}
+                                            color={bar.color}
+                                            style={[shouldDisable && styles.disabled && { opacity: 0.5 }]}
+                                        />
+                                    )) || <View />}
+                                </Animated.View>
                             </View>
                         )) || <View />}
                 </TouchableWithoutFeedback>
@@ -443,7 +413,7 @@ class TopBar extends Component {
                         style={[
                             styles.childView,
                             { backgroundColor: isSelected ? bar.hover : bar.bg },
-                            isSelected ? activeHighlight : null,
+                            isSelected && activeHighlight,
                         ]}
                     >
                         <Text
@@ -492,7 +462,11 @@ class TopBar extends Component {
                     }}
                     onContentSizeChange={(x, y) => this.setScrollable(y)}
                     contentContainerView={{ height: height }}
-                    style={{ maxHeight: isIPhoneX ? height - height / 8.8 - 34 : height - height / 8.8 }}
+                    style={{
+                        maxHeight: isIPhoneX
+                            ? height - Styling.topBarHeight - Styling.iPhoneXBottomInsetHeight
+                            : height - Styling.topBarHeight,
+                    }}
                 >
                     {restContent}
                 </ScrollView>
@@ -521,7 +495,7 @@ class TopBar extends Component {
                         style={[
                             styles.container,
                             {
-                                backgroundColor: bar.alt,
+                                backgroundColor: bar.bg,
                             },
                         ]}
                     >
@@ -550,10 +524,11 @@ const mapStateToProps = (state) => ({
     childRoute: state.home.childRoute,
     isTopBarActive: state.home.isTopBarActive,
     selectedAccount: selectAccountInfo(state),
-    theme: state.settings.theme,
-    notificationLog: state.alerts.notificationLog,
+    theme: getThemeFromState(state),
     isFetchingLatestAccountInfo: state.ui.isFetchingAccountInfo,
     currentRoute: state.home.childRoute,
+    isKeyboardActive: state.ui.isKeyboardActive,
+    isModalActive: state.ui.isModalActive,
 });
 
 const mapDispatchToProps = {
@@ -561,7 +536,6 @@ const mapDispatchToProps = {
     toggleModalActivity,
     setSeedIndex,
     setPollFor,
-    clearLog,
 };
 
 export default withNamespaces('global')(connect(mapStateToProps, mapDispatchToProps)(TopBar));

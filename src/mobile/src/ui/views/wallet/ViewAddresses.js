@@ -10,6 +10,7 @@ import { selectAccountInfo } from 'shared-modules/selectors/accounts';
 import { round } from 'shared-modules/libs/utils';
 import { formatValue, formatUnit } from 'shared-modules/libs/iota/utils';
 import { generateAlert } from 'shared-modules/actions/alerts';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { setSetting } from 'shared-modules/actions/wallet';
 import { width, height } from 'libs/dimensions';
 import { Icon } from 'ui/theme/icons';
@@ -65,10 +66,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         width,
     },
-    separator: {
-        flex: 1,
-        height: height / 60,
-    },
     noAddressesContainer: {
         justifyContent: 'center',
         alignItems: 'center',
@@ -88,7 +85,7 @@ const styles = StyleSheet.create({
 /** View Addresses component */
 export class ViewAddresses extends Component {
     static propTypes = {
-        /** Selected account. Contains transfers, addresses and balance  */
+        /** Selected account. Contains transactions, addresses and balance  */
         selectedAccount: PropTypes.object.isRequired,
         /** @ignore */
         setSetting: PropTypes.func.isRequired,
@@ -108,16 +105,17 @@ export class ViewAddresses extends Component {
      * Converts address data (object) to an array and orders it by key index
      *
      * @method prepAddresses
-     * @returns {Array}
+     * @returns {array}
      */
     prepAddresses() {
-        const { addresses } = this.props.selectedAccount;
-        const preparedAddresses = map(addresses, (data, address) => ({
-            ...data,
-            balance: round(formatValue(data.balance), 1),
-            unit: formatUnit(data.balance),
-            address: `${address}${data.checksum}`,
+        const { addressData } = this.props.selectedAccount;
+        const preparedAddresses = map(addressData, (addressObject) => ({
+            ...addressObject,
+            balance: round(formatValue(addressObject.balance), 1),
+            unit: formatUnit(addressObject.balance),
+            address: `${addressObject.address}${addressObject.checksum}`,
         }));
+
         return orderBy(preparedAddresses, 'index', ['desc']);
     }
 
@@ -138,23 +136,22 @@ export class ViewAddresses extends Component {
         const isSpent = spent.local || spent.remote;
 
         return (
-            <View style={{ flexDirection: 'row', paddingHorizontal: width / 15, height: height / 25 }}>
+            <View style={{ flexDirection: 'row', paddingHorizontal: width / 15, height: height / 14.5 }}>
                 <TouchableOpacity
                     onPress={() => this.copy(address.address)}
                     style={{ alignItems: 'flex-start', flex: 8, justifyContent: 'center' }}
                 >
-                    <View>
-                        <Text
-                            numberOfLines={2}
-                            style={[
-                                styles.addressText,
-                                { textDecorationLine: isSpent ? 'line-through' : 'none' },
-                                { color: isSpent ? '#B21C17' : theme.body.color },
-                            ]}
-                        >
-                            {address.address}
-                        </Text>
-                    </View>
+                    <Text
+                        style={[
+                            styles.addressText,
+                            { textDecorationLine: isSpent ? 'line-through' : 'none' },
+                            { color: isSpent ? '#B21C17' : theme.body.color },
+                        ]}
+                        ellipsizeMode="middle"
+                        numberOfLines={2}
+                    >
+                        {address.address}
+                    </Text>
                 </TouchableOpacity>
                 <View style={{ alignItems: 'flex-end', flex: 2, justifyContent: 'center' }}>
                     <Text style={[styles.balanceText, { color: theme.body.color }]}>
@@ -175,9 +172,8 @@ export class ViewAddresses extends Component {
                 contentContainerStyle={noAddresses ? styles.flatList : null}
                 data={addresses}
                 initialNumToRender={10} // TODO: Should be dynamically computed.
-                keyExtractor={(item, index) => index}
+                keyExtractor={(item, index) => index.toString()}
                 renderItem={({ item }) => this.renderAddress(item)}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
                 ListEmptyComponent={
                     <View style={styles.noAddressesContainer}>
                         <Text style={[styles.noAddresses, { color: theme.body.color }]}>{t('noAddresses')}</Text>
@@ -229,7 +225,7 @@ const mapDispatchToProps = {
 
 const mapStateToProps = (state) => ({
     selectedAccount: selectAccountInfo(state),
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
 });
 
 export default withNamespaces(['receive', 'global'])(connect(mapStateToProps, mapDispatchToProps)(ViewAddresses));

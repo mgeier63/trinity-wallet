@@ -6,6 +6,7 @@ import PropTypes from 'prop-types';
 import { shallow } from 'enzyme';
 import { TwoFactorSetupAddKey } from 'ui/views/wallet/TwoFactorSetupAddKey';
 import * as keychainUtils from 'libs/keychain';
+import theme from '../../../../__mocks__/theme';
 
 jest.mock('react-native-is-device-rooted', () => ({
     isDeviceRooted: () => true,
@@ -28,15 +29,20 @@ jest.mock('libs/keychain', () => ({
     storeTwoFactorAuthKeyInKeychain: jest.fn(() => Promise.resolve({})),
 }));
 
+jest.mock('libs/navigation', () => ({
+    navigator: {
+        push: jest.fn(),
+    },
+}));
+
 const getProps = (overrides) =>
     assign(
         {},
         {
-            theme: { body: { bg: '#ffffff' } },
+            theme,
             generateAlert: noop,
             componentId: 'foo',
             t: () => '',
-            password: {},
         },
         overrides,
     );
@@ -55,10 +61,6 @@ describe('Testing TwoFactorSetupAddKey component', () => {
             expect(TwoFactorSetupAddKey.propTypes.generateAlert).toEqual(PropTypes.func.isRequired);
         });
 
-        it('should require a password object as a prop', () => {
-            expect(TwoFactorSetupAddKey.propTypes.password).toEqual(PropTypes.object.isRequired);
-        });
-
         it('should require a componentId string as a prop', () => {
             expect(TwoFactorSetupAddKey.propTypes.componentId).toEqual(PropTypes.string.isRequired);
         });
@@ -72,11 +74,11 @@ describe('Testing TwoFactorSetupAddKey component', () => {
             expect(wrapper.name()).toEqual('View');
         });
 
-        it('should return six View components', () => {
+        it('should return five View components', () => {
             const props = getProps();
 
             const wrapper = shallow(<TwoFactorSetupAddKey {...props} />);
-            expect(wrapper.find('View').length).toEqual(6);
+            expect(wrapper.find('View').length).toEqual(5);
         });
 
         it('should return a QRCode component', () => {

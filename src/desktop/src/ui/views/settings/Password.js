@@ -4,8 +4,6 @@ import { withI18n } from 'react-i18next';
 import { connect } from 'react-redux';
 import { zxcvbn } from 'libs/exports';
 
-import { getSelectedAccountMeta } from 'selectors/accounts';
-
 import { generateAlert } from 'actions/alerts';
 import { setPassword } from 'actions/wallet';
 
@@ -24,7 +22,7 @@ import { applyYubikeyMixinDesktop } from 'libs/yubikey/YubikeyMixinDesktop';
 class PasswordSettings extends PureComponent {
     static propTypes = {
         /** @ignore */
-        accountMeta: PropTypes.object.isRequired,
+        accounts: PropTypes.object.isRequired,
         /** @ignore */
         setPassword: PropTypes.func.isRequired,
         /** @ignore */
@@ -35,7 +33,7 @@ class PasswordSettings extends PureComponent {
         // eslint-disable-next-line react/no-unused-prop-types
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
     };
 
     constructor(props) {
@@ -47,12 +45,12 @@ class PasswordSettings extends PureComponent {
             passwordConfirm: '',
         };
 
-        applyYubikeyMixinDesktop(this, props.yubikeySettings);
+        applyYubikeyMixinDesktop(this, props.yubikeySlot);
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
         const { passwordCurrent, passwordNew } = this.state;
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
         try {
             const passwordNewHash = await hash(passwordNew);
             const passwordCurrentHash = await hash(passwordCurrent);
@@ -70,7 +68,7 @@ class PasswordSettings extends PureComponent {
             //console.error(err2);
             postError(
                 t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }),
             );
             return;
         }
@@ -86,7 +84,7 @@ class PasswordSettings extends PureComponent {
         }
 
         const { passwordCurrent, passwordNew, passwordConfirm } = this.state;
-        const { accountMeta, setPassword, generateAlert, t } = this.props;
+        const { accounts, setPassword, generateAlert, t } = this.props;
 
         if (passwordNew !== passwordConfirm) {
             generateAlert(
@@ -116,7 +114,13 @@ class PasswordSettings extends PureComponent {
             const passwordCurrentHash =
                 yubiHashedPasswordCur !== null ? yubiHashedPasswordCur : await hash(passwordCurrent);
 
-            await SeedStore[accountMeta.type].updatePassword(passwordCurrentHash, passwordNewHash);
+            const accountTypes = Object.keys(accounts)
+                .map((accountName) => (accounts[accountName].meta ? accounts[accountName].meta.type : 'keychain'))
+                .filter((accountType, index, accountTypes) => accountTypes.indexOf(accountType) === index);
+
+            for (let i = 0; i < accountTypes.length; i++) {
+                await SeedStore[accountTypes[i]].updatePassword(passwordCurrentHash, passwordNewHash);
+            }
 
             setPassword(passwordNewHash);
 
@@ -147,39 +151,42 @@ class PasswordSettings extends PureComponent {
 
         return (
             <form onSubmit={(e) => this.changePassword(e)}>
-                <Password
-                    value={passwordCurrent}
-                    label={t('changePassword:currentPassword')}
-                    onChange={(value) => this.setState({ passwordCurrent: value })}
-                />
-                <Password
-                    showScore
-                    value={passwordNew}
-                    label={t('changePassword:newPassword')}
-                    onChange={(value) => this.setState({ passwordNew: value })}
-                />
-                <Password
-                    value={passwordConfirm}
-                    label={t('changePassword:confirmPassword')}
-                    onChange={(value) => this.setState({ passwordConfirm: value })}
-                />
                 <fieldset>
+                    <Password
+                        value={passwordCurrent}
+                        label={t('changePassword:currentPassword')}
+                        onChange={(value) => this.setState({ passwordCurrent: value })}
+                    />
+                    <Password
+                        showScore
+                        value={passwordNew}
+                        label={t('changePassword:newPassword')}
+                        onChange={(value) => this.setState({ passwordNew: value })}
+                    />
+                    <Password
+                        value={passwordConfirm}
+                        label={t('changePassword:confirmPassword')}
+                        onChange={(value) => this.setState({ passwordConfirm: value })}
+                    />
+                </fieldset>
+                <footer>
                     <Button
+                        className="square"
                         type="submit"
                         disabled={!passwordCurrent.length || !passwordNew.length || !passwordConfirm.length}
                     >
                         {t('settings:changePassword')}
                     </Button>
-                </fieldset>
+                </footer>
             </form>
         );
     }
 }
 
 const mapStateToProps = (state) => ({
-    accountMeta: getSelectedAccountMeta(state),
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
+    accounts: state.accounts.accountInfo,
 });
 
 const mapDispatchToProps = {

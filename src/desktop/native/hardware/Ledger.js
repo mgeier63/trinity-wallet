@@ -1,9 +1,10 @@
-const Transport = require('@ledgerhq/hw-transport-node-hid').default;
-const Iota = require('hw-app-iota').default;
-const Wallet = require('electron').remote.getCurrentWindow().webContents;
-const { ipcRenderer: ipc } = require('electron');
+import 'babel-polyfill';
+import Transport from '@ledgerhq/hw-transport-node-hid';
+import Iota from 'hw-app-iota';
+import { ipcRenderer as ipc, remote } from 'electron';
+import Errors from 'libs/errors';
 
-const connectionError = { message: 'Ledger connection error' };
+const Wallet = remote.getCurrentWindow().webContents;
 
 class Ledger {
     constructor() {
@@ -64,7 +65,7 @@ class Ledger {
                 if (message && message.abort) {
                     this.removeListener(callbackSuccess);
                     ipc.removeListener('ledger', callbackAbort);
-                    reject(connectionError);
+                    reject(Errors.LEDGER_CANCELLED);
                 }
             };
             ipc.on('ledger', callbackAbort);
@@ -118,7 +119,7 @@ class Ledger {
 
             callback();
 
-            const callbackAbort = (e, message) => {
+            const callbackAbort = (_e, message) => {
                 if (message && message.abort) {
                     rejected = true;
 
@@ -127,12 +128,20 @@ class Ledger {
                     if (timeout) {
                         clearTimeout(timeout);
                     }
-                    reject(connectionError);
+                    reject(Errors.LEDGER_CANCELLED);
                 }
             };
 
             ipc.on('ledger', callbackAbort);
         });
+    }
+
+    /**
+     * Retrieves the largest supported number of transactions
+     * @returns {number}
+     */
+    async getAppMaxBundleSize() {
+        return await this.iota.getAppMaxBundleSize();
     }
 
     /**
@@ -175,4 +184,4 @@ class Ledger {
 
 const ledger = new Ledger();
 
-module.exports = ledger;
+export default ledger;

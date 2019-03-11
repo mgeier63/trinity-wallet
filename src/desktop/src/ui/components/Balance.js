@@ -3,7 +3,10 @@ import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { withI18n } from 'react-i18next';
 
+import { getAccountNamesFromState } from 'selectors/accounts';
+
 import { formatValue, formatUnit } from 'libs/iota/utils';
+import { accumulateBalance } from 'libs/iota/addresses';
 import { round, roundDown } from 'libs/utils';
 import { getCurrencySymbol } from 'libs/currency';
 
@@ -28,6 +31,8 @@ class Balance extends React.PureComponent {
         seedIndex: PropTypes.number.isRequired,
         /** @ignore */
         accounts: PropTypes.object.isRequired,
+        /** Wallet account names */
+        accountNames: PropTypes.array.isRequired,
         /** @ignore */
         settings: PropTypes.object.isRequired,
         /** @ignore */
@@ -58,18 +63,31 @@ class Balance extends React.PureComponent {
     }
 
     render() {
-        const { summary, index, accounts, switchAccount, seedIndex, settings, marketData, t } = this.props;
+        const {
+            summary,
+            index,
+            accounts,
+            accountNames,
+            switchAccount,
+            seedIndex,
+            settings,
+            marketData,
+            t,
+        } = this.props;
         const { balanceIsShort } = this.state;
 
-        const accountName =
-            summary && index === -1
-                ? t('totalBalance')
-                : Object.keys(accounts.accountInfo)[summary ? index : seedIndex];
+        const accountName = summary && index === -1 ? t('totalBalance') : accountNames[summary ? index : seedIndex];
 
-        const accountBalance =
+        const balances =
             summary && index === -1
-                ? Object.entries(accounts.accountInfo).reduce((total, account) => total + account[1].balance, 0)
-                : accounts.accountInfo[accountName].balance;
+                ? Object.entries(accounts.accountInfo).reduce(
+                      (total, [_accountName, accountData]) =>
+                          total.concat(accountData.addressData.map((addressData) => addressData.balance)),
+                      [],
+                  )
+                : accounts.accountInfo[accountName].addressData.map((addressData) => addressData.balance);
+
+        const accountBalance = accumulateBalance(balances);
 
         const currencySymbol = getCurrencySymbol(settings.currency);
         const fiatBalance = round(accountBalance * marketData.usdPrice / 1000000 * settings.conversionRate, 2).toFixed(
@@ -108,6 +126,7 @@ class Balance extends React.PureComponent {
 const mapStateToProps = (state) => ({
     seedIndex: state.wallet.seedIndex,
     accounts: state.accounts,
+    accountNames: getAccountNamesFromState(state),
     marketData: state.marketData,
     settings: state.settings,
 });

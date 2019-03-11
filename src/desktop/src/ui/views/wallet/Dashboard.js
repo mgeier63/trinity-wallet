@@ -7,7 +7,7 @@ import { Switch, Route } from 'react-router-dom';
 import { connect } from 'react-redux';
 
 import SeedStore from 'libs/SeedStore';
-import { capitalize } from 'libs/helpers';
+import { capitalize } from 'libs/iota/converter';
 
 import { getAccountInfo } from 'actions/accounts';
 
@@ -59,7 +59,12 @@ class Dashboard extends React.PureComponent {
 
         const seedStore = await new SeedStore[accountMeta.type](password, accountName, accountMeta);
 
-        this.props.getAccountInfo(seedStore, accountName, Electron.notify);
+        this.props.getAccountInfo(
+            seedStore,
+            accountName,
+            Electron.notify,
+            true, // Sync with quorum enabled
+        );
     };
 
     render() {

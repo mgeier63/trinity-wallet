@@ -1,8 +1,8 @@
-import map from 'lodash/map';
+import values from 'lodash/values';
 import isEqual from 'lodash/isEqual';
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { Animated, Text, View, StyleSheet, Keyboard } from 'react-native';
+import { Animated, Text, View, StyleSheet, Keyboard, Easing } from 'react-native';
 import { connect } from 'react-redux';
 import { withNamespaces } from 'react-i18next';
 import { generateAlert } from 'shared-modules/actions/alerts';
@@ -15,9 +15,12 @@ import { Styling } from 'ui/theme/general';
 import { hash } from 'libs/keychain';
 import SeedStore from 'libs/SeedStore';
 import { width, height } from 'libs/dimensions';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import { isAndroid, getAndroidFileSystemPermissions } from 'libs/device';
 import { removeNonAlphaNumeric } from 'shared-modules/libs/utils';
 import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
+import { tritsToChars } from 'shared-modules/libs/iota/converter';
+import { UInt8ToString } from 'libs/crypto';
 import InfoBox from './InfoBox';
 import Button from './Button';
 import CustomTextInput from './CustomTextInput';
@@ -26,7 +29,6 @@ import PasswordFields from './PasswordFields';
 const steps = [
     'isValidatingWalletPassword',
     'isViewingGeneralInfo',
-    'isViewingPasswordInfo',
     'isSettingPassword',
     'isExporting',
     'isSelectingSaveMethodAndroid',
@@ -54,7 +56,7 @@ const styles = StyleSheet.create({
         color: 'white',
         fontFamily: 'SourceSansPro-Light',
         fontSize: Styling.fontSize3,
-        textAlign: 'left',
+        textAlign: 'center',
         backgroundColor: 'transparent',
     },
 });
@@ -66,11 +68,11 @@ class SeedVaultExportComponent extends Component {
         /** @ignore */
         theme: PropTypes.object.isRequired,
         /** @ignore */
-        seed: PropTypes.string.isRequired,
+        seed: PropTypes.string,
         /** @ignore */
         generateAlert: PropTypes.func.isRequired,
         /** Name for selected account */
-        selectedAccountName: PropTypes.string.isRequired,
+        selectedAccountName: PropTypes.string,
         /** Type for selected account */
         selectedAccountMeta: PropTypes.object.isRequired,
         /** Returns to page before starting the Seed Vault Export process */
@@ -85,8 +87,6 @@ class SeedVaultExportComponent extends Component {
         onRef: PropTypes.func.isRequired,
         /** Determines whether user needs to enter wallet password */
         isAuthenticated: PropTypes.bool.isRequired,
-        /** @ignore */
-        storedPasswordHash: PropTypes.object.isRequired,
         /** Triggered when user enters the correct wallet password */
         setAuthenticated: PropTypes.func,
         /** Sets seed variable in parent component following successful SeedVault import */
@@ -95,24 +95,33 @@ class SeedVaultExportComponent extends Component {
         // eslint-disable-next-line react/no-unused-prop-types
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
+        /** @ignore */
+        yubikeyAndroidReaderMode: PropTypes.boolean.isRequired,
+    };
+
+
+    static defaultProps = {
+        seed: '',
     };
 
     constructor(props) {
         super(props);
         this.state = {
-            password: '',
-            reentry: '',
+            currentPassword: null,
+            password: null,
+            reentry: null,
             path: '',
             saveToDownloadFolder: false,
+            seed: props.seed,
         };
-        applyYubikeyMixinMobile(this, props.yubikeySettings);
+        applyYubikeyMixinMobile(this, props.yubikeySlot, props.androidReaderMode);
     }
 
     componentWillMount() {
         const { isAuthenticated, onRef } = this.props;
         onRef(this);
-        this.animatedValue = new Animated.Value(isAuthenticated ? width * 1.5 : width * 2.5);
+        this.animatedValue = new Animated.Value(isAuthenticated ? width : width * 2);
         nodejs.start('main.js');
         nodejs.channel.addListener(
             'message',
@@ -129,6 +138,10 @@ class SeedVaultExportComponent extends Component {
         if (this.state.path !== '' && !this.state.saveToDownloadFolder) {
             RNFetchBlob.fs.unlink(this.state.path);
         }
+        delete this.state.currentPassword;
+        delete this.state.password;
+        delete this.state.reentry;
+        delete this.state.seed;
     }
 
     /**
@@ -152,13 +165,12 @@ class SeedVaultExportComponent extends Component {
                 .replace(/[-:]/g, '')
                 .replace('T', '-')}.kdbx`;
         this.setState({ path });
-        const vaultParsed = map(vault.split(','), (num) => parseInt(num));
         RNFetchBlob.fs.exists(path).then((fileExists) => {
             if (fileExists) {
                 RNFetchBlob.fs.unlink(path);
             }
             RNFetchBlob.fs
-                .createFile(path, vaultParsed, 'ascii')
+                .createFile(path, values(vault), 'ascii')
                 .then(() => {
                     if (this.state.saveToDownloadFolder) {
                         return this.onExportSuccess();
@@ -186,8 +198,6 @@ class SeedVaultExportComponent extends Component {
         if (step === 'isValidatingWalletPassword') {
             return this.validateWalletPassword();
         } else if (step === 'isViewingGeneralInfo') {
-            return this.navigateToStep('isViewingPasswordInfo');
-        } else if (step === 'isViewingPasswordInfo') {
             return this.navigateToStep('isSettingPassword');
         } else if (step === 'isExporting') {
             return this.navigateToStep('isSelectingSaveMethodAndroid');
@@ -235,7 +245,10 @@ class SeedVaultExportComponent extends Component {
      * @method onExportPress
      */
     onExportPress() {
-        return nodejs.channel.send('export:' + this.props.seed + ':' + this.state.password);
+        // FIXME: Password should be UInt8, not string
+        return nodejs.channel.send(
+            'export:' + tritsToChars(this.state.seed) + ':' + UInt8ToString(this.state.password),
+        );
     }
 
     /**
@@ -245,10 +258,8 @@ class SeedVaultExportComponent extends Component {
      */
     onBackPress() {
         const { step } = this.props;
-        if (step === 'isViewingPasswordInfo') {
+        if (step === 'isSettingPassword') {
             return this.navigateToStep('isViewingGeneralInfo');
-        } else if (step === 'isSettingPassword') {
-            return this.navigateToStep('isViewingPasswordInfo');
         } else if (step === 'isExporting') {
             return this.navigateToStep('isSettingPassword');
         } else if (step === 'isSelectingSaveMethodAndroid') {
@@ -276,9 +287,9 @@ class SeedVaultExportComponent extends Component {
      * @method validateWalletPassword
      */
     async validateWalletPassword(yubikeyHashedPassword = null) {
-        const { t, storedPasswordHash, selectedAccountName, selectedAccountMeta } = this.props;
-        const { password } = this.state;
-        if (!password) {
+        const { t, selectedAccountName, selectedAccountMeta } = this.props;
+        const { currentPassword } = this.state;
+        if (!currentPassword) {
             this.props.generateAlert('error', t('login:emptyPassword'), t('login:emptyPasswordExplanation'));
         } else {
             //after submitting password, all we need to to is stating yubikey process if yubikey 2fa is enabled
@@ -291,20 +302,16 @@ class SeedVaultExportComponent extends Component {
             if (yubikeyHashedPassword !== null) {
                 enteredPasswordHash = yubikeyHashedPassword;
             } else {
-                try {
-                    enteredPasswordHash = await hash(password);
-                } catch (err) {
-                    generateAlert('error', t('errorAccessingKeychain'), t('errorAccessingKeychainExplanation'));
-                }
+                enteredPasswordHash = await hash(password);
             }
 
-            if (isEqual(enteredPasswordHash, storedPasswordHash)) {
-                const seedStore = new SeedStore[selectedAccountMeta.type](enteredPasswordHash, selectedAccountName);
-                const seed = await seedStore.getSeed();
-
-                this.props.setSeed(seed);
+            if (isEqual(enteredPasswordHash, global.passwordHash)) {
+                const seedStore = await new SeedStore[selectedAccountMeta.type](
+                    enteredPasswordHash,
+                    selectedAccountName,
+                );
+                this.setState({ seed: await seedStore.getSeed() });
                 this.props.setAuthenticated(true);
-                this.setState({ password: '' });
                 return this.navigateToStep('isViewingGeneralInfo');
             }
             this.props.generateAlert(
@@ -316,7 +323,7 @@ class SeedVaultExportComponent extends Component {
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
 
         let passwordHash = null;
         try {
@@ -339,7 +346,7 @@ class SeedVaultExportComponent extends Component {
         } catch (err2) {
             postError(
                 t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
+                t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }),
             );
             return;
         }
@@ -353,19 +360,18 @@ class SeedVaultExportComponent extends Component {
      */
     navigateToStep(nextStep) {
         const stepIndex = steps.indexOf(nextStep);
-        const animatedValue = [2.5, 1.5, 0.5, -0.5, -1.5, -2.5];
-        Animated.spring(this.animatedValue, {
+        const animatedValue = [2, 1, 0, -1, -2];
+        Animated.timing(this.animatedValue, {
             toValue: animatedValue[stepIndex] * width,
-            velocity: 3,
-            tension: 2,
-            friction: 8,
+            duration: 500,
+            easing: Easing.bezier(0.25, 1, 0.25, 1),
         }).start();
         this.props.setProgressStep(nextStep);
     }
 
     render() {
-        const { t, theme } = this.props;
-        const { password, reentry } = this.state;
+        const { t, theme, isAuthenticated } = this.props;
+        const { currentPassword, password, reentry } = this.state;
         const textColor = { color: theme.body.color };
 
         if (!this.isYubikeyIdle()) {
@@ -374,13 +380,13 @@ class SeedVaultExportComponent extends Component {
 
         return (
             <Animated.View style={[styles.container, { transform: [{ translateX: this.animatedValue }] }]}>
-                <View style={styles.viewContainer}>
+                <View style={[styles.viewContainer, isAuthenticated && { opacity: 0 }]}>
                     <Text style={[styles.infoText, textColor, { marginBottom: height / 15 }]}>
                         {t('login:enterPassword')}
                     </Text>
                     <CustomTextInput
                         label={t('password')}
-                        onChangeText={(password) => this.setState({ password })}
+                        onValidTextChange={(currentPassword) => this.setState({ currentPassword })}
                         containerStyle={{ width: Styling.contentWidth }}
                         autoCapitalize="none"
                         autoCorrect={false}
@@ -389,27 +395,26 @@ class SeedVaultExportComponent extends Component {
                         secureTextEntry
                         onSubmitEditing={() => this.onNextPress()}
                         theme={theme}
-                        value={password}
+                        value={currentPassword}
+                        isPasswordInput
                     />
                 </View>
                 <View style={styles.viewContainer}>
-                    <InfoBox
-                        body={theme.body}
-                        text={<Text style={[styles.infoBoxText, textColor]}>{t('seedVaultExplanation')}</Text>}
-                    />
+                    <InfoBox>
+                        <Text style={[styles.infoBoxText, textColor]}>{t('seedVaultExplanation')}</Text>
+                    </InfoBox>
                 </View>
                 <View style={styles.viewContainer}>
-                    <InfoBox
-                        body={theme.body}
-                        text={<Text style={[styles.infoBoxText, textColor]}>{t('seedVaultKeyExplanation')}</Text>}
-                    />
-                </View>
-                <View style={styles.viewContainer}>
+                    <InfoBox containerStyle={{ marginBottom: height / 30 }}>
+                        <Text style={[styles.infoBoxText, textColor]}>{t('seedVaultKeyExplanation')}</Text>
+                    </InfoBox>
                     <PasswordFields
                         onRef={(ref) => {
                             this.passwordFields = ref;
                         }}
                         onAcceptPassword={() => this.navigateToStep('isExporting')}
+                        passwordLabel={t('twoFA:key')}
+                        reentryLabel={t('retypeKey')}
                         password={password}
                         reentry={reentry}
                         setPassword={(password) => this.setState({ password })}
@@ -417,47 +422,48 @@ class SeedVaultExportComponent extends Component {
                     />
                 </View>
                 <View style={styles.viewContainer}>
-                    <InfoBox
-                        body={theme.body}
-                        text={<Text style={[styles.infoBoxText, textColor]}>{t('seedVaultWarning')}</Text>}
-                    />
+                    <InfoBox>
+                        <Text style={[styles.infoBoxText, textColor]}>{t('seedVaultWarning')}</Text>
+                    </InfoBox>
                 </View>
                 <View style={styles.viewContainer}>
-                    <Button
-                        onPress={() => {
-                            this.setState({ saveToDownloadFolder: true });
-                            this.onExportPress();
-                        }}
-                        style={{
-                            wrapper: {
-                                width: width / 1.36,
-                                height: height / 13,
-                                borderRadius: height / 90,
-                                backgroundColor: theme.secondary.color,
-                            },
-                            children: { color: theme.primary.body },
-                        }}
-                    >
-                        {t('saveToDownloadFolder')}
-                    </Button>
-                    <View style={{ flex: 0.5 }} />
-                    <Button
-                        onPress={() => {
-                            this.setState({ saveToDownloadFolder: false });
-                            this.onExportPress();
-                        }}
-                        style={{
-                            wrapper: {
-                                width: width / 1.36,
-                                height: height / 13,
-                                borderRadius: height / 90,
-                                backgroundColor: theme.secondary.color,
-                            },
-                            children: { color: theme.primary.body },
-                        }}
-                    >
-                        {t('global:share')}
-                    </Button>
+                    <View>
+                        <Button
+                            onPress={() => {
+                                this.setState({ saveToDownloadFolder: true });
+                                this.onExportPress();
+                            }}
+                            style={{
+                                wrapper: {
+                                    width: width / 1.36,
+                                    height: height / 13,
+                                    borderRadius: height / 90,
+                                    backgroundColor: theme.secondary.color,
+                                    marginBottom: height / 20,
+                                },
+                                children: { color: theme.primary.body },
+                            }}
+                        >
+                            {t('saveToDownloadFolder')}
+                        </Button>
+                        <Button
+                            onPress={() => {
+                                this.setState({ saveToDownloadFolder: false });
+                                this.onExportPress();
+                            }}
+                            style={{
+                                wrapper: {
+                                    width: width / 1.36,
+                                    height: height / 13,
+                                    borderRadius: height / 90,
+                                    backgroundColor: theme.secondary.color,
+                                },
+                                children: { color: theme.primary.body },
+                            }}
+                        >
+                            {t('global:share')}
+                        </Button>
+                    </View>
                 </View>
             </Animated.View>
         );
@@ -467,11 +473,11 @@ class SeedVaultExportComponent extends Component {
 const mapStateToProps = (state) => ({
     selectedAccountName: getSelectedAccountName(state),
     selectedAccountMeta: getSelectedAccountMeta(state),
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     minimised: state.ui.minimised,
-    storedPasswordHash: state.wallet.password,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
+    yubikeyAndroidReaderMode: state.settings.yubikeyAndroidReaderMode,
 });
 
 const mapDispatchToProps = {

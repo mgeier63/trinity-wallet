@@ -1,10 +1,11 @@
-const { ipcMain: ipc, app, protocol, shell, Tray } = require('electron');
-const electron = require('electron');
-const initMenu = require('./native/Menu.js');
-const path = require('path');
-const URL = require('url');
-const fs = require('fs');
-const electronSettings = require('electron-settings');
+import electron, { ipcMain as ipc, app, protocol, shell, Tray } from 'electron';
+import installExtension, { REACT_DEVELOPER_TOOLS, REDUX_DEVTOOLS } from 'electron-devtools-installer';
+import electronSettings from 'electron-settings';
+import path from 'path';
+import URL from 'url';
+import fs from 'fs';
+
+import { initMenu, contextMenu } from './native/Menu.js';
 
 /**
  * Expose Garbage Collector flag for manual trigger after seed usage
@@ -16,7 +17,7 @@ app.commandLine.appendSwitch('js-flags', '--expose-gc');
  */
 const argv = process.argv.join();
 if (argv.includes('inspect') || argv.includes('remote') || typeof v8debug !== 'undefined') {
-    return app.quit();
+    app.quit();
 }
 
 /**
@@ -28,6 +29,11 @@ app.setAppUserModelId('org.iota.trinity');
  * Set environment mode
  */
 const devMode = process.env.NODE_ENV === 'development';
+
+const paths = {
+    assets: path.resolve(devMode ? __dirname : app.getAppPath(), 'assets'),
+    preload: path.resolve(devMode ? __dirname : app.getAppPath(), 'dist'),
+};
 
 /**
  * Define deep link state
@@ -56,8 +62,6 @@ if (!devMode) {
     app.setAsDefaultProtocolClient('iota');
 }
 
-let settings = {};
-
 let windowState = {
     width: 1280,
     height: 720,
@@ -67,22 +71,22 @@ let windowState = {
 };
 
 try {
-    const data = electronSettings.get('reduxPersist:settings');
     const windowStateData = electronSettings.get('window-state');
     if (windowStateData) {
         windowState = windowStateData;
     }
-    settings = JSON.parse(data) || {};
 } catch (error) {}
 
 /**
  * Temporarily disable proxy if not overridden by settings
  */
-
-if (settings.ignoreProxy) {
-    app.commandLine.appendSwitch('auto-detect', 'false');
-    app.commandLine.appendSwitch('no-proxy-server');
-}
+try {
+    const ignoreProxy = electronSettings.get('ignore-proxy');
+    if (ignoreProxy) {
+        app.commandLine.appendSwitch('auto-detect', 'false');
+        app.commandLine.appendSwitch('no-proxy-server');
+    }
+} catch (error) {}
 
 function createWindow() {
     /**
@@ -99,12 +103,6 @@ function createWindow() {
         });
     } catch (error) {}
 
-    let bgColor = (settings.theme && settings.theme.body.bg) || 'rgb(3, 41, 62)';
-
-    if (bgColor.indexOf('rgb') === 0) {
-        bgColor = bgColor.match(/[0-9]+/g).reduce((a, b) => a + (b | 256).toString(16).slice(1), '#');
-    }
-
     /**
      * Initialize the main wallet window
      */
@@ -115,16 +113,15 @@ function createWindow() {
         y: windowState.y,
         minWidth: 500,
         minHeight: 720,
+        show: false,
         frame: process.platform === 'linux',
         titleBarStyle: 'hidden',
-        icon:
-            process.platform === 'win32'
-                ? `${__dirname}/dist/icon.ico`
-                : process.platform === 'darwin' ? `${__dirname}/dist/icon.icns` : `${__dirname}/dist/icon.png`,
-        backgroundColor: bgColor,
+        icon: `${paths.assets}icon.${
+            process.platform === 'win32' ? 'ico' : process.platform === 'darwin' ? 'icns' : 'png'
+        }`,
         webPreferences: {
             nodeIntegration: false,
-            preload: path.resolve(__dirname, `native/preload/${devMode ? 'development' : 'production'}.js`),
+            preload: path.resolve(paths.preload, devMode ? 'preloadDev.js' : 'preloadProd.js'),
             disableBlinkFeatures: 'Auxclick',
             webviewTag: false,
         },
@@ -138,11 +135,10 @@ function createWindow() {
             fullscreenable: false,
             resizable: false,
             transparent: true,
-            backgroundColor: bgColor,
             show: false,
             webPreferences: {
                 nodeIntegration: false,
-                preload: path.resolve(__dirname, 'native/preload/tray.js'),
+                preload: path.resolve(paths.preload, 'preloadTray.js'),
                 disableBlinkFeatures: 'Auxclick',
                 webviewTag: false,
             },
@@ -190,18 +186,12 @@ function createWindow() {
     /**
      * Enable React and Redux devtools in development mode
      */
+
     if (devMode) {
         windows.main.webContents.openDevTools({ mode: 'detach' });
-
         if (process.platform === 'darwin') {
             windows.tray.webContents.openDevTools({ mode: 'detach' });
         }
-
-        const {
-            default: installExtension,
-            REACT_DEVELOPER_TOOLS,
-            REDUX_DEVTOOLS,
-        } = require('electron-devtools-installer');
 
         installExtension(REACT_DEVELOPER_TOOLS);
         installExtension(REDUX_DEVTOOLS);
@@ -211,40 +201,9 @@ function createWindow() {
      * Add right click context menu for input elements
      */
     windows.main.webContents.on('context-menu', (e, props) => {
-        const InputMenu = electron.Menu.buildFromTemplate([
-            {
-                label: 'Undo',
-                role: 'undo',
-            },
-            {
-                label: 'Redo',
-                role: 'redo',
-            },
-            {
-                type: 'separator',
-            },
-            {
-                label: 'Cut',
-                role: 'cut',
-            },
-            {
-                label: 'Copy',
-                role: 'copy',
-            },
-            {
-                label: 'Paste',
-                role: 'paste',
-            },
-            {
-                type: 'separator',
-            },
-            {
-                label: 'Select all',
-                role: 'selectall',
-            },
-        ]);
         const { isEditable } = props;
         if (isEditable) {
+            const InputMenu = contextMenu();
             InputMenu.popup(windows.main);
         }
     });
@@ -266,18 +225,17 @@ function createWindow() {
             } catch (error) {}
         }
     });
-
-    if (process.platform === 'darwin') {
-        const enabled = settings ? settings.isTrayEnabled : true;
-        setupTray(enabled);
-    }
 }
 
 /**
  * Setup Tray icon
  * @param {boolean} enabled - determine if tray is enabled
  */
-const setupTray = (enabled) => {
+ipc.on('tray.enable', (e, enabled) => {
+    if (process.platform !== 'darwin') {
+        return;
+    }
+
     if (enabled === false) {
         if (tray && !tray.isDestroyed()) {
             tray.destroy();
@@ -289,12 +247,12 @@ const setupTray = (enabled) => {
         return;
     }
 
-    tray = new Tray(`${__dirname}/dist/trayTemplate@2x.png`);
+    tray = new Tray(path.resolve(paths.assets, 'trayTemplate@2x.png'));
 
     tray.on('click', () => {
         toggleTray();
     });
-};
+});
 
 const toggleTray = () => {
     if (windows.tray.isVisible()) {
@@ -409,24 +367,13 @@ ipc.on('request.deepLink', () => {
 });
 
 /**
- * Proxy storage update event to tray window
+ * Proxy store update event to tray window
  */
-ipc.on('storage.update', (e, payload) => {
-    if (process.platform !== 'darwin') {
-        return;
-    }
 
-    if (windows.tray && !windows.tray.isDestroyed()) {
-        windows.tray.webContents.send('storage.update', payload);
+ipc.on('store.update', (_e, payload) => {
+    if (process.platform === 'darwin' && windows.tray && !windows.tray.isDestroyed()) {
+        windows.tray.webContents.send('store.update', payload);
     }
-    try {
-        const data = JSON.parse(payload);
-        const items = JSON.parse(data.item);
-
-        if (data.key === 'reduxPersist:settings') {
-            setupTray(items.isTrayEnabled);
-        }
-    } catch (e) {}
 });
 
 /**
@@ -439,13 +386,15 @@ ipc.on('menu.update', (e, payload) => {
 });
 
 /**
- * Proxy focus event from tray to main window
+ * Proxy main window focus
  */
 ipc.on('window.focus', (e, payload) => {
     if (windows.main) {
         windows.main.show();
         windows.main.focus();
-        windows.main.webContents.send('menu', payload);
+        if (payload) {
+            windows.main.webContents.send('menu', payload);
+        }
     }
 });
 

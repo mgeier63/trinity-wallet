@@ -6,6 +6,7 @@ import { connect } from 'react-redux';
 import { setMode } from 'shared-modules/actions/settings';
 import { setSetting } from 'shared-modules/actions/wallet';
 import { generateAlert } from 'shared-modules/actions/alerts';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import Fonts from 'ui/theme/fonts';
 import { width, height } from 'libs/dimensions';
 import { Icon } from 'ui/theme/icons';
@@ -36,9 +37,8 @@ const styles = StyleSheet.create({
     infoText: {
         fontFamily: Fonts.secondary,
         fontSize: Styling.fontSize3,
-        paddingTop: height / 60,
         backgroundColor: 'transparent',
-        textAlign: 'left',
+        textAlign: 'center',
     },
     itemLeft: {
         flexDirection: 'row',
@@ -107,17 +107,12 @@ class ModeSelection extends Component {
                 <View style={styles.container}>
                     <View style={styles.topContainer}>
                         <View style={{ flex: 2.3 }} />
-                        <InfoBox
-                            body={body}
-                            text={
-                                <View>
-                                    <Text style={[styles.infoText, textColor]}>{t('advancedModeExplanation')}</Text>
-                                    <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
-                                        {t('modesExplanation')}
-                                    </Text>
-                                </View>
-                            }
-                        />
+                        <InfoBox>
+                            <Text style={[styles.infoText, textColor]}>{t('advancedModeExplanation')}</Text>
+                            <Text style={[styles.infoText, textColor, { paddingTop: height / 50 }]}>
+                                {t('modesExplanation')}
+                            </Text>
+                        </InfoBox>
                         <View style={{ flex: 0.8 }} />
                         <TouchableWithoutFeedback
                             onPress={this.changeMode}
@@ -163,7 +158,7 @@ class ModeSelection extends Component {
 
 const mapStateToProps = (state) => ({
     mode: state.settings.mode,
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
 });
 
 const mapDispatchToProps = {

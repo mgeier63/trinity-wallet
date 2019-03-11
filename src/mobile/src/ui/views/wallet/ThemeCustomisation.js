@@ -6,6 +6,7 @@ import { StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback } fr
 import { connect } from 'react-redux';
 import { setSetting } from 'shared-modules/actions/wallet';
 import { updateTheme } from 'shared-modules/actions/settings';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import THEMES from 'shared-modules/themes/themes';
 import Dropdown from 'ui/components/Dropdown'; // eslint-disable-line import/no-named-as-default
 import { width, height } from 'libs/dimensions';
@@ -138,7 +139,7 @@ class ThemeCustomisation extends Component {
         this.state = {
             theme: props.theme,
             themeName: props.themeName,
-            themes: Object.keys(THEMES),
+            themes: Object.keys(THEMES).map((theme, index) => ({ theme, index })),
         };
     }
 
@@ -150,12 +151,10 @@ class ThemeCustomisation extends Component {
      * Update wallet's theme
      *
      * @method onApplyPress
-     * @param {object} theme
      * @param {string} themeName
      */
-    onApplyPress(theme, themeName) {
-        const newTheme = cloneDeep(theme);
-        this.props.updateTheme(newTheme, themeName);
+    onApplyPress(themeName) {
+        this.props.updateTheme(themeName);
     }
 
     getLocalizedThemeName(themeName) {
@@ -165,18 +164,24 @@ class ThemeCustomisation extends Component {
 
     getLocalizedThemes() {
         const localizedThemes = this.state.themes.map((item) => {
-            return this.getLocalizedThemeName(item);
+            return {
+                ...item,
+                theme: this.getLocalizedThemeName(item.theme),
+            };
         });
+
         return localizedThemes;
     }
 
     getThemeName(localizedThemeName) {
         const localizedThemes = this.getLocalizedThemes();
-        return this.state.themes[localizedThemes.indexOf(localizedThemeName)];
+        const { index } = localizedThemes.find(({ theme }) => theme === localizedThemeName);
+
+        return this.state.themes.find((value) => value.index === index).theme;
     }
 
     render() {
-        const { theme, themeName } = this.state;
+        const { themeName } = this.state;
         const { body, bar, secondary, primary, positive, negative } = this.state.theme;
         const { t } = this.props;
         const bodyColor = this.props.theme.body.color;
@@ -200,8 +205,8 @@ class ThemeCustomisation extends Component {
                                 dropdownWidth={{ width: width / 1.45 }}
                                 background
                                 shadow
-                                defaultOption={this.getLocalizedThemeName(themeName)}
-                                options={this.getLocalizedThemes()}
+                                value={this.getLocalizedThemeName(themeName)}
+                                options={this.getLocalizedThemes().map(({ theme }) => theme)}
                                 saveSelection={(localizedSelection) => {
                                     const selection = this.getThemeName(localizedSelection);
                                     const newTHEMES = cloneDeep(THEMES);
@@ -234,7 +239,7 @@ class ThemeCustomisation extends Component {
                                     {t('themeCustomisation:mockup').toUpperCase()}
                                 </Text>
                             </View>
-                            <View style={[styles.frameBar, { backgroundColor: bar.alt }]}>
+                            <View style={[styles.frameBar, { backgroundColor: bar.bg }]}>
                                 <Text style={[styles.frameBarTitle, { color: bar.color }]}>
                                     {t('global:mainWallet').toUpperCase()}
                                 </Text>
@@ -281,7 +286,7 @@ class ThemeCustomisation extends Component {
                             </View>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            onPress={() => this.onApplyPress(theme, themeName)}
+                            onPress={() => this.onApplyPress(themeName)}
                             hitSlop={{ top: height / 55, bottom: height / 55, left: width / 55, right: width / 55 }}
                         >
                             <View style={styles.itemRight}>
@@ -297,7 +302,7 @@ class ThemeCustomisation extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     themeName: state.settings.themeName,
 });
 

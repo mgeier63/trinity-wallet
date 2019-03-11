@@ -5,6 +5,7 @@ import { withNamespaces } from 'react-i18next';
 import { StyleSheet, View, Text, TouchableWithoutFeedback, TouchableOpacity, Keyboard } from 'react-native';
 import { changeAutoPromotionSettings } from 'shared-modules/actions/settings';
 import { setSetting } from 'shared-modules/actions/wallet';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 import Fonts from 'ui/theme/fonts';
 import { width, height } from 'libs/dimensions';
 import { Icon } from 'ui/theme/icons';
@@ -35,7 +36,7 @@ const styles = StyleSheet.create({
     infoText: {
         fontFamily: 'SourceSansPro-Light',
         fontSize: Styling.fontSize3,
-        textAlign: 'left',
+        textAlign: 'center',
         backgroundColor: 'transparent',
     },
     itemLeft: {
@@ -108,17 +109,10 @@ class AutoPromotion extends Component {
                 <View style={styles.container}>
                     <View style={styles.topContainer}>
                         <View style={{ flex: 2 }} />
-                        <InfoBox
-                            body={body}
-                            text={
-                                <View>
-                                    <Text style={[styles.infoText, textColor]}>{t('autoPromotionExplanation')}</Text>
-                                    <Text style={[styles.infoText, textColor, infoTextPadding]}>
-                                        {t('autoPromotionPoW')}
-                                    </Text>
-                                </View>
-                            }
-                        />
+                        <InfoBox>
+                            <Text style={[styles.infoText, textColor]}>{t('autoPromotionExplanation')}</Text>
+                            <Text style={[styles.infoText, textColor, infoTextPadding]}>{t('autoPromotionPoW')}</Text>
+                        </InfoBox>
                         <View style={{ flex: 1.1 }} />
                         <TouchableWithoutFeedback
                             onPress={this.onChange}
@@ -164,7 +158,7 @@ class AutoPromotion extends Component {
 
 const mapStateToProps = (state) => ({
     autoPromotion: state.settings.autoPromotion,
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
 });
 
 const mapDispatchToProps = {

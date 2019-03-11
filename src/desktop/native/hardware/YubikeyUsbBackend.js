@@ -185,8 +185,9 @@ function findInterfaceFromDevice(d) {
     return d.interfaces.find((it) => it.descriptor.bInterfaceClass === USB_CLASS_CSCID);
 }
 
+
+
 module.exports = {
-    getOrWaitForBackend: getOrWaitForBackend,
-    cancelWaitForBackend: cancelWaitForBackend,
-    YubikeyUsbBackend: YubikeyUsbBackend,
+    yubikeyGetOrWaitForBackend: getOrWaitForBackend,
+    yubikeyCancelWaitForBackend: cancelWaitForBackend,
 };

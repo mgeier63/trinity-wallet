@@ -69,9 +69,9 @@ const styles = StyleSheet.create({
     },
 });
 
-export function applyYubikeyMixinMobile(target, yubikeySettings) {
+export function applyYubikeyMixinMobile(target, yubikeySlot, yubikeyAndroidReaderMode) {
     if (isYubikeyBackendImplemented()) {
-        Object.assign(target, new YubikeyMixinMobile(target, yubikeySettings, yubikeyNativeBackend));
+        Object.assign(target, new YubikeyMixinMobile(target, yubikeySlot, yubikeyAndroidReaderMode, yubikeyNativeBackend));
     } else {
         Object.assign(target, new YubikeyMixinNoop(target));
     }
@@ -98,8 +98,8 @@ class YubikeyMixinNoop {
 }
 
 class YubikeyMixinMobile extends YubikeyMixin {
-    constructor(target, yubikeySettings, yubikeyBackend) {
-        super(target, yubikeySettings, yubikeyBackend, YUBIKEY_COMMUNICATING_SPLASH_TIMEOUT);
+    constructor(target, yubikeySlot, yubikeyAndroidReaderMode, yubikeyBackend) {
+        super(target, yubikeySlot, yubikeyAndroidReaderMode, yubikeyBackend, YUBIKEY_COMMUNICATING_SPLASH_TIMEOUT);
 
         target.isYubikeyIdle = () => {
             const { yubikeyState } = target.state;

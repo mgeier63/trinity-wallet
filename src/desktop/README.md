@@ -8,18 +8,41 @@ This is the repository for the IOTA Trinity Desktop Wallet. The application is b
 
 ## Required Dependencies
 
-- [NodeJS](https://nodejs.org/en/)
-- NPM (automatically installed with NodeJS)
-- Electron (`npm install electron -g`)
+-   [NodeJS](https://nodejs.org/en/)
+-   NPM (automatically installed with NodeJS)
+-   Electron (`npm install electron -g`)
+
+On **Windows** platforms you'll need to install build tools to succesfully compile native modules:
+
+```
+# Install Visual C++ Build Tools and Python 2.7
+npm install --global windows-build-tools
+# Install OpenSSL VC++ Static 64bit Library
+git clone https://github.com/Microsoft/vcpkg C:\src\vcpkg
+cd C:\src\vcpkg
+.\bootstrap-vcpkg.bat
+.\vcpkg install openssl:x64-windows-static
+```
+
+On **Linux** platforms you'll need to additional packages to build native modules:
+
+```
+sudo apt install build-essential libudev-dev libusb-1.0-0 libusb-1.0-0-dev
+sudo apt install gcc-4.8 g++-4.8 && export CXX=g++-4.8
+# Fedora only:
+yum install libusbx-devel
+```
 
 ### 1. Installing dependencies
 
 After installing the [shared dependencies](https://github.com/iotaledger/trinity-wallet#instructions), install the desktop dependencies:
+
 ```
 npm run deps:desktop
 ```
 
 Then, navigate to this directory:
+
 ```
 cd src/desktop
 ```
@@ -33,7 +56,6 @@ npm run build
 ```
 
 Then, you can either compile a production version (3a) or development version (3b) of Trinity:
-
 
 ### 3a. Compile Trinity desktop appplication
 

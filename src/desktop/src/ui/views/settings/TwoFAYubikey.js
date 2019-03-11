@@ -15,9 +15,10 @@ import Button from 'ui/components/Button';
 import Password from 'ui/components/modal/Password';
 import Confirm from 'ui/components/modal/Confirm';
 
-import { str2bytes } from 'shared-modules/libs/yubikey/YubikeyUtil';
-import { YUBIKEY_STATE } from 'libs/yubikey/YubikeyApi';
 import { applyYubikeyMixinDesktop } from 'libs/yubikey/YubikeyMixinDesktop';
+
+import { str2bytes } from '../../../../../shared/libs/yubikey/YubikeyUtil';
+import { YUBIKEY_STATE } from '../../../../../shared/libs/yubikey/YubikeyApi';
 
 import css from './twoFa.scss';
 
@@ -38,7 +39,7 @@ class TwoFAYubikey extends React.Component {
         /** @ignore */
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
         /** @ignore */
         set2FAStatusYubikey: PropTypes.func.isRequired,
         /** @ignore */
@@ -61,7 +62,7 @@ class TwoFAYubikey extends React.Component {
         };
 
         this.yubikeyTask = null;
-        applyYubikeyMixinDesktop(this, props.yubikeySettings);
+        applyYubikeyMixinDesktop(this, props.yubikeySlot);
         if (props.is2FAEnabledYubikey) {
             this.doCheckYubikey();
         }
@@ -269,7 +270,7 @@ class TwoFAYubikey extends React.Component {
 
     render() {
         const { provState } = this.state;
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
         if (provState === PROV_STATE.ENABLED) {
             return (
                 <form className={css.twoFa}>
@@ -298,7 +299,7 @@ class TwoFAYubikey extends React.Component {
                     onConfirm={() => this.setState({ provState: PROV_STATE.CONFIRM_PROVISIONING })}
                     content={{
                         title: t('yubikey:notProvisioned'),
-                        message: t('yubikey:notProvisionedExplanation', { slot: yubikeySettings.slot }),
+                        message: t('yubikey:notProvisionedExplanation', { slot: yubikeySlot }),
                         confirm: t('yubikey:configure'),
                         cancel: t('cancel'),
                     }}
@@ -310,7 +311,7 @@ class TwoFAYubikey extends React.Component {
                     onConfirm={() => this.startYubikeyProvision()}
                     content={{
                         title: t('yubikey:confirmProvisioning'),
-                        message: t('yubikey:confirmProvisioningExplanation', { slot: yubikeySettings.slot }),
+                        message: t('yubikey:confirmProvisioningExplanation', { slot: yubikeySlot }),
                         confirm: t('yubikey:program'),
                         cancel: t('cancel'),
                     }}
@@ -322,7 +323,7 @@ class TwoFAYubikey extends React.Component {
                     onConfirm={() => this.startYubikeyProvision()}
                     content={{
                         title: t('yubikey:preProvisioned'),
-                        message: t('yubikey:preProvisionedExplanation', { slot: yubikeySettings.slot }),
+                        message: t('yubikey:preProvisionedExplanation', { slot: yubikeySlot }),
                         confirm: t('yubikey:replaceExistingConfiguration'),
                         cancel: t('yubikey:useExistingConfiguration'),
                     }}
@@ -353,7 +354,7 @@ class TwoFAYubikey extends React.Component {
 
 const mapStateToProps = (state) => ({
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeySlot: state.settings.yubikeySlot,
 
     password: state.wallet.password,
     wallet: state.wallet,

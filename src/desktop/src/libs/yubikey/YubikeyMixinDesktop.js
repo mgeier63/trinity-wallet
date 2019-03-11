@@ -1,27 +1,30 @@
 /* global Electron */
-import { YubikeyMixin } from 'shared-modules/libs/yubikey/YubikeyMixin';
-import { YUBIKEY_STATE } from 'shared-modules/libs/yubikey/YubikeyApi';
+
 import React from 'react';
 import Loading from 'ui/components/Loading';
 import Button from 'ui/components/Button';
 import Modal from 'ui/components/modal/Modal';
 import { hashBytes } from 'libs/crypto';
 
+import { YubikeyMixin } from '../../../../shared/libs/yubikey/YubikeyMixin';
+import { YUBIKEY_STATE } from '../../../../shared/libs/yubikey/YubikeyApi';
+
+
 // Show some dummy progress for this amount of milliseconds, to provide feedback to the user that something
 // is beeing done with the YubiKey.
 // Set to 0 to completely disable that progress screen.
 const YUBIKEY_COMMUNICATING_SPLASH_TIMEOUT = 0;
 
-export function applyYubikeyMixinDesktop(target, yubikeySettings, customRenderLoading = null) {
+export function applyYubikeyMixinDesktop(target, yubikeySlot, customRenderLoading = null) {
     Object.assign(
         target,
-        new YubikeyMixinDesktop(target, yubikeySettings, Electron.yubikeyUsbBackend, customRenderLoading),
+        new YubikeyMixinDesktop(target, yubikeySlot, Electron.yubikeyGetOrWaitForBackend, Electron.yubikeyCancelWaitForBackend, customRenderLoading),
     );
 }
 
 class YubikeyMixinDesktop extends YubikeyMixin {
-    constructor(target, yubikeySettings, yubikeyUsbBackend, customRenderLoading) {
-        super(target, yubikeySettings, yubikeyUsbBackend, YUBIKEY_COMMUNICATING_SPLASH_TIMEOUT);
+    constructor(target, yubikeySlot, getOrWaitForBackend, cancelWaitForBackend, customRenderLoading) {
+        super(target, yubikeySlot, false, getOrWaitForBackend, cancelWaitForBackend, YUBIKEY_COMMUNICATING_SPLASH_TIMEOUT);
 
         this._render = target.render;
 
