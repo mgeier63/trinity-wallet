@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { connect } from 'react-redux';
 import { setSetting } from 'shared-modules/actions/wallet';
-import { setYubikey } from 'shared-modules/actions/settings';
+import { setYubikeySlot, setYubikeyAndroidReaderMode } from 'shared-modules/actions/settings';
 import { withNamespaces } from 'react-i18next';
 import { width, height } from 'libs/dimensions';
 import RadioForm, { RadioButton, RadioButtonInput, RadioButtonLabel } from 'react-native-simple-radio-button';
@@ -12,6 +12,7 @@ import { isAndroid } from 'libs/device';
 import { Icon } from 'ui/theme/icons';
 import { Styling } from 'ui/theme/general';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 
 const styles = StyleSheet.create({
     container: {
@@ -80,9 +81,13 @@ const styles = StyleSheet.create({
 export class YubikeySettings extends Component {
     static propTypes = {
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
         /** @ignore */
-        setYubikey: PropTypes.func.isRequired,
+        yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
+        /** @ignore */
+        setYubikeySlot: PropTypes.func.isRequired,
+        /** @ignore */
+        setYubikeyAndroidReaderMode: PropTypes.func.isRequired,
         /** @ignore */
         setSetting: PropTypes.func.isRequired,
         /** @ignore */
@@ -96,8 +101,8 @@ export class YubikeySettings extends Component {
         super(props);
 
         this.state = {
-            slot: this.props.yubikeySettings.slot,
-            androidReaderMode: this.props.yubikeySettings.androidReaderMode,
+            slot: this.props.yubikeySlot,
+            androidReaderMode: this.props.yubikeyAndroidReaderMode,
         };
     }
 
@@ -126,12 +131,10 @@ export class YubikeySettings extends Component {
         const { slot, androidReaderMode } = this.state;
         return (
             <TouchableOpacity
-                onPress={() =>
-                    this.props.setYubikey({
-                        slot: slot,
-                        androidReaderMode: androidReaderMode,
-                    })
-                }
+                onPress={() => {
+                    this.props.setYubikeySlot(slot);
+                    this.props.setYubikeyAndroidReaderMode(androidReaderMode);
+                }}
                 hitSlop={{ top: height / 55, bottom: height / 55, left: width / 55, right: width / 55 }}
             >
                 <View style={styles.itemRight}>
@@ -143,7 +146,8 @@ export class YubikeySettings extends Component {
     }
 
     render() {
-        const { t, theme: { label, primary } } = this.props;
+        const { theme: { body, primary }, t } = this.props;
+        const textColor = body.color;
         const { slot, androidReaderMode } = this.state;
         const radioPropsSlot = [{ label: t('slot1'), value: 1 }, { label: t('slot2'), value: 2 }];
         const radioPropsNfc = [
@@ -169,8 +173,8 @@ export class YubikeySettings extends Component {
                                         }}
                                         borderWidth={1}
                                         buttonSize={12}
-                                        buttonInnerColor={primary.color}
-                                        buttonOuterColor={primary.color}
+                                        buttonInnerColor={textColor}
+                                        buttonOuterColor={textColor}
                                         buttonWrapStyle={{ marginLeft: 10 }}
                                     />
                                     <RadioButtonLabel
@@ -182,7 +186,7 @@ export class YubikeySettings extends Component {
                                                 this.setState({ slot: obj.value });
                                             }
                                         }}
-                                        labelStyle={[styles.radioText, { color: label.color }]}
+                                        labelStyle={[styles.radioText, { color: textColor }]}
                                         labelWrapStyle={{}}
                                     />
                                 </RadioButton>
@@ -204,8 +208,8 @@ export class YubikeySettings extends Component {
                                                 onPress={() => this.setState({ androidReaderMode: obj.value })}
                                                 borderWidth={1}
                                                 buttonSize={12}
-                                                buttonInnerColor={primary.color}
-                                                buttonOuterColor={primary.color}
+                                                buttonInnerColor={textColor}
+                                                buttonOuterColor={textColor}
                                                 buttonWrapStyle={{ marginLeft: 10 }}
                                             />
                                             <RadioButtonLabel
@@ -213,7 +217,7 @@ export class YubikeySettings extends Component {
                                                 index={i}
                                                 labelHorizontal
                                                 onPress={() => this.setState({ androidReaderMode: obj.value })}
-                                                labelStyle={[styles.radioText, { color: label.color }]}
+                                                labelStyle={[styles.radioText, { color: textColor }]}
                                                 labelWrapStyle={{}}
                                             />
                                         </RadioButton>
@@ -233,13 +237,15 @@ export class YubikeySettings extends Component {
 }
 
 const mapStateToProps = (state) => ({
-    yubikeySettings: state.settings.yubikey,
-    theme: state.settings.theme,
+    yubikeyAndroidReaderMode: state.settings.yubikeyAndroidReaderMode,
+    yubikeySlot: state.settings.yubikeySlot,
+    theme: getThemeFromState(state),
 });
 
 const mapDispatchToProps = {
     setSetting,
-    setYubikey,
+    setYubikeyAndroidReaderMode,
+    setYubikeySlot,
 };
 
 export default withNamespaces(['yubikey', 'global'])(connect(mapStateToProps, mapDispatchToProps)(YubikeySettings));

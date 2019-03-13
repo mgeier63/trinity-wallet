@@ -43,11 +43,8 @@ import com.zapper.QRCodePackage;
 import java.util.Arrays;
 import java.util.List;
 
-<<<<<<< HEAD
-import ca.jaysoo.extradimensions.ExtraDimensionsPackage;
 import timber.log.Timber;
-=======
->>>>>>> develop
+
 
 public class MainApplication extends NavigationApplication implements ShareApplication {
 
@@ -61,7 +58,6 @@ public class MainApplication extends NavigationApplication implements ShareAppli
             Timber.plant(new Timber.DebugTree());
         }
 
-        MultiDex.install(this);
     }
 
     @Override

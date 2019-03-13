@@ -78,7 +78,6 @@ class WalletResetRequirePassword extends Component {
         yubikeySlot: PropTypes.number.isRequired,
         /** @ignore */
         yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
-
     };
 
     constructor(props) {
@@ -177,7 +176,7 @@ class WalletResetRequirePassword extends Component {
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
 
         let passwordHash = null;
         try {
@@ -198,10 +197,7 @@ class WalletResetRequirePassword extends Component {
                 return;
             }
         } catch (err2) {
-            postError(
-                t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
-            );
+            postError(t('yubikey:misconfigured'), t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }));
             return;
         }
     }

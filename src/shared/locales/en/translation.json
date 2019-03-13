@@ -639,7 +639,7 @@
         "twoFaMethod_otp": "OTP",
         "twoFaMethod_yubikey": "YubiKey",
         "twoFaMethod_otp_explanation": "Unlock using One Time Passwords from an app on your phone (e.g. \"Google Authenticator\")",
-        "twoFaMethod_yubikey_explanation": "Unlock with an YubiKey USB hardware token for maximum 2FA security"
+        "twoFaMethod_yubikey_explanation": "Unlock with a YubiKey USB hardware token for maximum 2FA security"
     },
     "yubikey": {
         "yubikeySettings": "YubiKey",

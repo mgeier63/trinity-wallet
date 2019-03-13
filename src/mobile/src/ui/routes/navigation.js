@@ -79,13 +79,13 @@ export default function registerScreens(store, Provider) {
         store,
     );
     Navigation.registerComponentWithRedux(
-        'twoFASetupChooser',
+        'twoFactorSetupChooser',
         () => applyHOCs(TwoFactorSetupChooseMethodComponent),
         Provider,
         store,
     );
     Navigation.registerComponentWithRedux(
-        'twoFASetupYubikey',
+        'twoFactorSetupYubikey',
         () => applyHOCs(TwoFactorSetupYubikeyComponent),
         Provider,
         store,

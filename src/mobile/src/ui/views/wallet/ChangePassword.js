@@ -116,7 +116,7 @@ class ChangePassword extends Component {
      *
      * @method onAcceptPassword
      */
-    async onAcceptPassword(yubiHashedPasswordCur = null, yubiHashedPasswordNew = null) {
+    async onAcceptPassword(yubiHashedPasswordNew = null) {
         const { generateAlert, t } = this.props;
         const { newPassword } = this.state;
         const salt = await getSalt();
@@ -125,7 +125,8 @@ class ChangePassword extends Component {
             return;
         }
 
-        const newPwdHash = yubiHashedPasswordNew !== null ? yubiHashedPasswordNew : await generatePasswordHash(newPassword, salt);
+        const newPwdHash =
+            yubiHashedPasswordNew !== null ? yubiHashedPasswordNew : await generatePasswordHash(newPassword, salt);
 
         changePassword(global.passwordHash, newPwdHash, salt)
             .then(() => {
@@ -136,10 +137,9 @@ class ChangePassword extends Component {
             .catch(() => generateAlert('error', t('somethingWentWrong'), t('somethingWentWrongTryAgain')));
     }
 
-
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
         const { newPassword } = this.state;
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
         try {
             const passwordNewHash = await hash(newPassword);
             const passwordCurrentHash = global.passwordHash;
@@ -149,16 +149,13 @@ class ChangePassword extends Component {
 
             if (aPwYubiHashedCurrent !== null && aPwYubiHashedNew !== null) {
                 postResultDelayed(async () => {
-                    this.onAcceptPassword(aPwYubiHashedCurrent, aPwYubiHashedNew);
+                    this.onAcceptPassword(/*XYZZYaPwYubiHashedCurrent,*/ aPwYubiHashedNew);
                 });
                 return;
             }
         } catch (err2) {
             //console.error(err2);
-            postError(
-                t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
-            );
+            postError(t('yubikey:misconfigured'), t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }));
             return;
         }
     }
@@ -180,25 +177,25 @@ class ChangePassword extends Component {
         this.passwordFields.checkPassword();
     }
 
-//
-//
-//     async isPasswordChangeValid() {
-// <<<<<<< HEAD
-//         const { t, currentPwdHash, generateAlert, is2FAEnabledYubikey } = this.props;
-//         const currentPasswordHash = await hash(this.state.currentPassword);
-//         if (!isEqual(currentPwdHash, currentPasswordHash) && !is2FAEnabledYubikey) {
-// =======
-//         const { t, generateAlert } = this.props;
-//         if (isEmpty(this.state.currentPassword)) {
-//             return this.props.generateAlert('error', t('login:emptyPassword'), t('emptyPasswordExplanation'));
-//         } else if (!isEqual(global.passwordHash, await hash(this.state.currentPassword))) {
-// >>>>>>> develop
-//             return generateAlert('error', t('incorrectPassword'), t('incorrectPasswordExplanation'));
-//         } else if (isEqual(this.state.newPassword, this.state.currentPassword)) {
-//             return generateAlert('error', t('oldPassword'), t('oldPasswordExplanation'));
-//         }
-//         this.passwordFields.checkPassword();
-//     }
+    //
+    //
+    //     async isPasswordChangeValid() {
+    // <<<<<<< HEAD
+    //         const { t, currentPwdHash, generateAlert, is2FAEnabledYubikey } = this.props;
+    //         const currentPasswordHash = await hash(this.state.currentPassword);
+    //         if (!isEqual(currentPwdHash, currentPasswordHash) && !is2FAEnabledYubikey) {
+    // =======
+    //         const { t, generateAlert } = this.props;
+    //         if (isEmpty(this.state.currentPassword)) {
+    //             return this.props.generateAlert('error', t('login:emptyPassword'), t('emptyPasswordExplanation'));
+    //         } else if (!isEqual(global.passwordHash, await hash(this.state.currentPassword))) {
+    // >>>>>>> develop
+    //             return generateAlert('error', t('incorrectPassword'), t('incorrectPasswordExplanation'));
+    //         } else if (isEqual(this.state.newPassword, this.state.currentPassword)) {
+    //             return generateAlert('error', t('oldPassword'), t('oldPasswordExplanation'));
+    //         }
+    //         this.passwordFields.checkPassword();
+    //     }
 
     render() {
         const { currentPassword, newPassword, newPasswordReentry } = this.state;

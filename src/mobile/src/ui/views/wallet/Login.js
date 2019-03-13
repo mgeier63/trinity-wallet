@@ -79,7 +79,7 @@ class Login extends Component {
         this.onLoginPress = this.onLoginPress.bind(this);
         this.setDeepUrl = this.setDeepUrl.bind(this);
 
-         applyYubikeyMixinMobile(this, props.yubikeySlot, props.yubikeyAndroidReaderMode);
+        applyYubikeyMixinMobile(this, props.yubikeySlot, props.yubikeyAndroidReaderMode);
     }
 
     componentWillMount() {
@@ -115,7 +115,6 @@ class Login extends Component {
         delete this.state.password;
     }
 
-
     /**
      * Validates password and logs in user if accepted
      * Navigates to 2FA validation if activated
@@ -135,6 +134,9 @@ class Login extends Component {
         if (!hasConnection || forceUpdate) {
             return;
         }
+
+        console.log('XYZZY onLoginPress ' + this.state.password);
+
         this.animationOutType = ['fadeOut'];
         if (size(this.state.password) === 0) {
             this.props.generateAlert('error', t('emptyPassword'), t('emptyPasswordExplanation'));
@@ -171,11 +173,8 @@ class Login extends Component {
                     t('global:unrecognisedPasswordExplanation'),
                 );
             }
-
-
         }
     }
-
 
     /**
      * Validates 2FA token and logs in user if accepted
@@ -262,7 +261,7 @@ class Login extends Component {
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings, password } = this.props;
+        const { t, yubikeySlot, password } = this.props;
 
         let passwordHash = null;
         try {
@@ -282,14 +281,10 @@ class Login extends Component {
                 return;
             }
         } catch (err2) {
-            postError(
-                t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
-            );
+            postError(t('yubikey:misconfigured'), t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }));
             return;
         }
     }
-
 
     render() {
         const { theme, isFingerprintEnabled } = this.props;
@@ -306,29 +301,30 @@ class Login extends Component {
                 duration={150}
                 style={[styles.container, { backgroundColor: body.bg }]}
             >
-                {nextLoginRoute === 'login' && this.isYubikeyIdle() && (
-                    <EnterPasswordOnLoginComponent
-                        theme={theme}
-                        onLoginPress={this.onLoginPress}
-                        navigateToNodeOptions={() => this.props.setLoginRoute('nodeOptions')}
-                        setLoginPasswordField={(password) => this.setState({ password })}
-                        password={this.state.password}
-                        isFingerprintEnabled={isFingerprintEnabled}
-                    />
-                )}
-                {nextLoginRoute === 'complete2FA' && this.isYubikeyIdle() && (
-                    <Enter2FAComponent
-                        verify={this.onComplete2FA}
-                        cancel={() => this.props.setLoginRoute('login')}
-                        theme={theme}
-                    />
-                )}
+                {nextLoginRoute === 'login' &&
+                    this.isYubikeyIdle() && (
+                        <EnterPasswordOnLoginComponent
+                            theme={theme}
+                            onLoginPress={this.onLoginPress}
+                            navigateToNodeOptions={() => this.props.setLoginRoute('nodeOptions')}
+                            setLoginPasswordField={(password) => this.setState({ password })}
+                            password={this.state.password}
+                            isFingerprintEnabled={isFingerprintEnabled}
+                        />
+                    )}
+                {nextLoginRoute === 'complete2FA' &&
+                    this.isYubikeyIdle() && (
+                        <Enter2FAComponent
+                            verify={this.onComplete2FA}
+                            cancel={() => this.props.setLoginRoute('login')}
+                            theme={theme}
+                        />
+                    )}
                 {nextLoginRoute !== 'complete2FA' &&
-                nextLoginRoute !== 'login' && <NodeOptionsOnLogin loginRoute={nextLoginRoute} />}
+                    nextLoginRoute !== 'login' && <NodeOptionsOnLogin loginRoute={nextLoginRoute} />}
             </AnimatedComponent>
         );
     }
-
 }
 
 const mapStateToProps = (state) => ({

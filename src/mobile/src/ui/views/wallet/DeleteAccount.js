@@ -197,7 +197,7 @@ class DeleteAccount extends Component {
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
 
         let passwordHash = null;
         try {
@@ -218,10 +218,7 @@ class DeleteAccount extends Component {
                 return;
             }
         } catch (err2) {
-            postError(
-                t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
-            );
+            postError(t('yubikey:misconfigured'), t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }));
             return;
         }
     }
@@ -252,7 +249,6 @@ class DeleteAccount extends Component {
     hideModal = () => {
         this.props.toggleModalActivity();
     };
-
 
     render() {
         const { t, theme, selectedAccountName } = this.props;

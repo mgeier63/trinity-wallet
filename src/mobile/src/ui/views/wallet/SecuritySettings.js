@@ -42,7 +42,9 @@ class SecuritySettings extends Component {
      */
     on2FASetupPress() {
         const { is2FAEnabled, is2FAEnabledYubikey } = this.props;
-        navigator.push(is2FAEnabled ? 'disable2FA' : is2FAEnabledYubikey ? 'twoFASetupYubikey' : 'twoFASetupChooser');
+        navigator.push(
+            is2FAEnabled ? 'disable2FA' : is2FAEnabledYubikey ? 'twoFactorSetupYubikey' : 'twoFactorSetupChooser',
+        );
     }
 
     /**

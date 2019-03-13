@@ -2,7 +2,6 @@ import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { generateAlert } from 'shared-modules/actions/alerts';
 import { connect } from 'react-redux';
-import { Navigation } from 'react-native-navigation';
 import { StyleSheet, View, Text, BackHandler } from 'react-native';
 import { withNamespaces } from 'react-i18next';
 import RadioForm, { RadioButton, RadioButtonInput } from 'react-native-simple-radio-button';
@@ -11,9 +10,10 @@ import { width, height } from 'libs/dimensions';
 import { Icon } from 'ui/theme/icons';
 import { Styling } from 'ui/theme/general';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
-import Button from 'ui/components/Button';
-import { isIPhoneX } from 'libs/device';
 import { isYubikeyBackendImplemented } from 'libs/nativeModules';
+import { getThemeFromState } from 'shared-modules/selectors/global';
+import DualFooterButtons from '../../components/DualFooterButtons';
+import { navigator } from 'libs/navigation';
 
 const styles = StyleSheet.create({
     container: {
@@ -103,11 +103,10 @@ class TwoFactorSetupChooseMethod extends Component {
      * @method goBack
      */
     goBack() {
-        Navigation.pop(this.props.componentId);
+        navigator.pop(this.props.componentId);
     }
 
     goNext() {
-        const { theme } = this.props;
         const { method } = this.state;
         let next = '';
         switch (method) {
@@ -115,46 +114,20 @@ class TwoFactorSetupChooseMethod extends Component {
                 next = 'twoFactorSetupAddKey';
                 break;
             case 'yubikey':
-                next = 'twoFASetupYubikey';
+                next = 'twoFactorSetupYubikey';
                 break;
         }
         if (next !== '') {
-            Navigation.push('appStack', {
-                component: {
-                    name: next,
-                    options: {
-                        animations: {
-                            push: {
-                                enable: false,
-                            },
-                            pop: {
-                                enable: false,
-                            },
-                        },
-                        layout: {
-                            backgroundColor: theme.body.bg,
-                            orientation: ['portrait'],
-                        },
-                        topBar: {
-                            visible: false,
-                            drawBehind: true,
-                            elevation: 0,
-                        },
-                        statusBar: {
-                            drawBehind: true,
-                            backgroundColor: theme.body.bg,
-                        },
-                    },
-                },
-            });
+            navigator.push(next);
         }
     }
 
     render() {
-        const { theme, t } = this.props;
         const { method } = this.state;
-        const backgroundColor = { backgroundColor: theme.body.bg };
-        const textColor = theme.body.color;
+
+        const { theme: { body }, t } = this.props;
+        const backgroundColor = { backgroundColor: body.bg };
+        const textColor = body.color;
 
         const { is2FAEnabled, is2FAEnabledYubikey } = this.props;
 
@@ -175,7 +148,6 @@ class TwoFactorSetupChooseMethod extends Component {
             });
         }
 
-        const borderRadius = isIPhoneX ? parseInt(width / 20) : 0;
         return (
             <View style={[styles.container, backgroundColor]}>
                 <View style={styles.topWrapper}>
@@ -229,47 +201,14 @@ class TwoFactorSetupChooseMethod extends Component {
                         })}
                     </RadioForm>
                 </View>
-                <View style={styles.bottomWrapper}>
-                    <View
-                        style={{
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexDirection: 'row',
-                        }}
-                    >
-                        <Button
-                            onPress={this.goBack}
-                            style={{
-                                wrapper: {
-                                    backgroundColor: theme.dark.color,
-                                    width: isIPhoneX ? Styling.contentWidth / 2 : width / 2,
-                                    borderColor: theme.primary.border,
-                                    borderWidth: 1,
-                                    borderBottomLeftRadius: borderRadius,
-                                    borderTopLeftRadius: borderRadius,
-                                },
-                                children: {
-                                    color: theme.dark.body,
-                                },
-                            }}
-                        >
-                            {t('global:back')}
-                        </Button>
-                        <Button
-                            onPress={this.goNext}
-                            style={{
-                                wrapper: {
-                                    width: isIPhoneX ? Styling.contentWidth / 2 : width / 2,
-                                    backgroundColor: method === '' ? theme.dark.color : theme.primary.color,
-                                    borderBottomRightRadius: borderRadius,
-                                    borderTopRightRadius: borderRadius,
-                                },
-                                children: { color: theme.primary.body },
-                            }}
-                        >
-                            {t('global:next')}
-                        </Button>
-                    </View>
+
+                <View style={styles.bottomContainer}>
+                    <DualFooterButtons
+                        onLeftButtonPress={this.goBack}
+                        onRightButtonPress={this.goNext}
+                        leftButtonText={t('global:back')}
+                        rightButtonText={t('global:next')}
+                    />
                 </View>
             </View>
         );
@@ -281,7 +220,7 @@ const mapDispatchToProps = {
 };
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     is2FAEnabled: state.settings.is2FAEnabled,
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
 });

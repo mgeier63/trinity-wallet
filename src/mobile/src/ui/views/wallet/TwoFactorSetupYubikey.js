@@ -7,9 +7,7 @@ import { getRandomBytes } from 'libs/crypto';
 import { enableYubikey2FA, hash } from 'libs/keychain';
 import { generateAlert } from 'shared-modules/actions/alerts';
 import { connect } from 'react-redux';
-import { Navigation } from 'react-native-navigation';
 import { withNamespaces } from 'react-i18next';
-import WithBackPressGoToHome from 'ui/components/BackPressGoToHome';
 import Fonts from 'ui/theme/fonts';
 import { Styling } from 'ui/theme/general';
 import { width, height } from 'libs/dimensions';
@@ -18,9 +16,10 @@ import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 import { str2bytes } from 'shared-modules/libs/yubikey/YubikeyUtil';
 import { YUBIKEY_STATE } from 'shared-modules/libs/yubikey/YubikeyApi';
 import { applyYubikeyMixinMobile } from 'libs/yubikey/YubikeyMixinMobile';
-import Button from 'ui/components/Button';
 import CustomTextInput from 'ui/components/CustomTextInput';
-import { isIPhoneX } from 'libs/device';
+import DualFooterButtons from '../../components/DualFooterButtons';
+import { navigator } from 'libs/navigation';
+import { getThemeFromState } from 'shared-modules/selectors/global';
 
 const styles = StyleSheet.create({
     container: {
@@ -97,7 +96,9 @@ export class TwoFactorSetupYubikey extends Component {
         /** @ignore */
         is2FAEnabledYubikey: PropTypes.bool.isRequired,
         /** @ignore */
-        yubikeySettings: PropTypes.object.isRequired,
+        yubikeySlot: PropTypes.number.isRequired,
+        /** @ignore */
+        yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
         /** @ignore */
         set2FAStatusYubikey: PropTypes.func.isRequired,
     };
@@ -115,7 +116,7 @@ export class TwoFactorSetupYubikey extends Component {
         };
 
         this.yubikeyTask = null;
-        applyYubikeyMixinMobile(this, props.yubikeySettings);
+        applyYubikeyMixinMobile(this, props.yubikeySlot, props.yubikeyAndroidReaderMode);
         if (props.is2FAEnabledYubikey) {
             this.doCheckYubikey();
         }
@@ -133,22 +134,26 @@ export class TwoFactorSetupYubikey extends Component {
 
     onDisabled = () => {
         const { generateAlert, t } = this.props;
-        Navigation.pop(this.props.componentId).then(
-            setTimeout(
-                () => generateAlert('success', t('twoFA:twoFADisabled'), t('twoFA:twoFADisabledExplanation')),
-                500,
-            ),
-        );
+        navigator
+            .pop(this.props.componentId)
+            .then(
+                setTimeout(
+                    () => generateAlert('success', t('twoFA:twoFADisabled'), t('twoFA:twoFADisabledExplanation')),
+                    500,
+                ),
+            );
     };
 
     onEnabled = () => {
         const { generateAlert, t } = this.props;
-        Navigation.pop(this.props.componentId).then(
-            setTimeout(
-                () => generateAlert('success', t('twoFA:twoFAEnabled'), t('twoFA:twoFAEnabledExplanation')),
-                500,
-            ),
-        );
+        navigator
+            .pop(this.props.componentId)
+            .then(
+                setTimeout(
+                    () => generateAlert('success', t('twoFA:twoFAEnabled'), t('twoFA:twoFAEnabledExplanation')),
+                    500,
+                ),
+            );
     };
 
     doStartYubikeyWithCallback = (callback) => {
@@ -224,7 +229,10 @@ export class TwoFactorSetupYubikey extends Component {
             generateAlert('error', t('yubikey:emptyPassword'), t('yubikey:emptyPasswordExplanation'));
             return;
         }
+        console.log('XYZZY ' + password);
         this.passwordConfirmHashed = await hash(password);
+        console.log('XYZZYfff ' + this.passwordConfirmHashed);
+
         this.doStartYubikeyWithCallback(this.doSetupYubikey2FA);
     };
 
@@ -332,10 +340,9 @@ export class TwoFactorSetupYubikey extends Component {
     noop = () => {};
 
     render() {
-        const { theme, t, yubikeySettings, is2FAEnabledYubikey } = this.props;
+        const { theme, t, yubikeySlot, is2FAEnabledYubikey } = this.props;
         const backgroundColor = { backgroundColor: theme.body.bg };
         const textColor = { color: theme.body.color };
-        const borderRadius = isIPhoneX ? parseInt(width / 20) : 0;
         const { password, provState } = this.state;
 
         let leftButtonText = t('global:back');
@@ -361,13 +368,13 @@ export class TwoFactorSetupYubikey extends Component {
                 rightButtonText = t('yubikey:configure');
                 rightButtonPress = () => this.setState({ provState: PROV_STATE.CONFIRM_PROVISIONING });
                 promptHeader = t('yubikey:notProvisioned');
-                promptExplanation = t('yubikey:notProvisionedExplanation', { slot: yubikeySettings.slot });
+                promptExplanation = t('yubikey:notProvisionedExplanation', { slot: yubikeySlot });
             } else if (provState === PROV_STATE.CONFIRM_PROVISIONING) {
                 showPrompt = true;
                 rightButtonText = t('yubikey:program');
                 rightButtonPress = () => this.startYubikeyProvision();
                 promptHeader = t('yubikey:confirmProvisioning');
-                promptExplanation = t('yubikey:confirmProvisioningExplanation', { slot: yubikeySettings.slot });
+                promptExplanation = t('yubikey:confirmProvisioningExplanation', { slot: yubikeySlot });
             } else if (provState === PROV_STATE.PREPROVISIONED) {
                 showPrompt = true;
                 leftButtonText = t('yubikey:replaceExistingConfiguration');
@@ -376,7 +383,7 @@ export class TwoFactorSetupYubikey extends Component {
                 rightButtonText = t('yubikey:useExistingConfiguration');
                 rightButtonPress = () => this.setState({ provState: PROV_STATE.PASSWORD_FOR_ENABLE });
                 promptHeader = t('yubikey:preProvisioned');
-                promptExplanation = t('yubikey:preProvisionedExplanation', { slot: yubikeySettings.slot });
+                promptExplanation = t('yubikey:preProvisionedExplanation', { slot: yubikeySlot });
             } else if (provState === PROV_STATE.PASSWORD_FOR_ENABLE) {
                 showPassword = true;
                 handlePasswordSubmit = () => this.startSetupYubikey2FA(password);
@@ -421,7 +428,7 @@ export class TwoFactorSetupYubikey extends Component {
                             </Text>
                             <CustomTextInput
                                 label={t('global:password')}
-                                onChangeText={(password) => this.setState({ password })}
+                                onValidTextChange={(password) => this.setState({ password })}
                                 containerStyle={{ width: Styling.contentWidth }}
                                 autoCapitalize="none"
                                 autoCorrect={false}
@@ -436,47 +443,14 @@ export class TwoFactorSetupYubikey extends Component {
                     )}
                 </View>
 
-                <View style={styles.bottomWrapper}>
-                    <View
-                        style={{
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexDirection: 'row',
-                        }}
-                    >
-                        <Button
-                            onPress={leftButtonPress}
-                            style={{
-                                wrapper: {
-                                    backgroundColor: theme.dark.color,
-                                    width: isIPhoneX ? Styling.contentWidth / 2 : width / 2,
-                                    borderColor: theme.primary.border,
-                                    borderWidth: 1,
-                                    borderBottomLeftRadius: borderRadius,
-                                    borderTopLeftRadius: borderRadius,
-                                },
-                                children: {
-                                    color: theme.dark.body,
-                                },
-                            }}
-                        >
-                            {leftButtonText}
-                        </Button>
-                        <Button
-                            onPress={rightButtonPress}
-                            style={{
-                                wrapper: {
-                                    width: isIPhoneX ? Styling.contentWidth / 2 : width / 2,
-                                    backgroundColor: rightButtonEnabled ? theme.primary.color : theme.dark.color,
-                                    borderBottomRightRadius: borderRadius,
-                                    borderTopRightRadius: borderRadius,
-                                },
-                                children: { color: theme.primary.body },
-                            }}
-                        >
-                            {rightButtonText}
-                        </Button>
-                    </View>
+                <View style={styles.bottomContainer}>
+                    <DualFooterButtons
+                        onLeftButtonPress={leftButtonPress}
+                        onRightButtonPress={rightButtonPress}
+                        leftButtonText={leftButtonText}
+                        rightButtonText={rightButtonText}
+                        disableRightButton={!rightButtonEnabled}
+                    />
                 </View>
             </View>
         );
@@ -490,15 +464,14 @@ const mapDispatchToProps = {
 };
 
 const mapStateToProps = (state) => ({
-    theme: state.settings.theme,
+    theme: getThemeFromState(state),
     password: state.wallet.password,
 
     is2FAEnabledYubikey: state.settings.is2FAEnabledYubikey,
-    yubikeySettings: state.settings.yubikey,
+    yubikeyAndroidReaderMode: state.settings.yubikeyAndroidReaderMode,
+    yubikeySlot: state.settings.yubikeySlot,
 
     wallet: state.wallet,
 });
 
-export default WithBackPressGoToHome()(
-    withNamespaces(['twoFA', 'global'])(connect(mapStateToProps, mapDispatchToProps)(TwoFactorSetupYubikey)),
-);
+export default withNamespaces(['twoFA', 'global'])(connect(mapStateToProps, mapDispatchToProps)(TwoFactorSetupYubikey));

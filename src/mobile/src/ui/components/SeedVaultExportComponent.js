@@ -97,9 +97,8 @@ class SeedVaultExportComponent extends Component {
         /** @ignore */
         yubikeySlot: PropTypes.number.isRequired,
         /** @ignore */
-        yubikeyAndroidReaderMode: PropTypes.boolean.isRequired,
+        yubikeyAndroidReaderMode: PropTypes.bool.isRequired,
     };
-
 
     static defaultProps = {
         seed: '',
@@ -344,10 +343,7 @@ class SeedVaultExportComponent extends Component {
                 return;
             }
         } catch (err2) {
-            postError(
-                t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }),
-            );
+            postError(t('yubikey:misconfigured'), t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }));
             return;
         }
     }

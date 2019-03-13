@@ -20,6 +20,8 @@ const screens = [
     'setAccountName',
     'seedReentry',
     'saveSeedConfirmation',
+    'twoFactorSetupChooser',
+    'twoFactorSetupYubikey',
     'twoFactorSetupAddKey',
     'twoFactorSetupEnterToken',
     'disable2FA',

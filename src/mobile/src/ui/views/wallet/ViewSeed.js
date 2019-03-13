@@ -233,7 +233,7 @@ class ViewSeed extends Component {
     }
 
     async doWithYubikey(yubikeyApi, postResultDelayed, postError) {
-        const { t, yubikeySettings } = this.props;
+        const { t, yubikeySlot } = this.props;
 
         let passwordHash = null;
         try {
@@ -255,10 +255,7 @@ class ViewSeed extends Component {
                 return;
             }
         } catch (err2) {
-            postError(
-                t('yubikey:misconfigured'),
-                t('yubikey:misconfiguredExplanation', { slot: yubikeySettings.slot }),
-            );
+            postError(t('yubikey:misconfigured'), t('yubikey:misconfiguredExplanation', { slot: yubikeySlot }));
             return;
         }
     }
@@ -302,7 +299,6 @@ class ViewSeed extends Component {
         }
     }
 
-
     /**
      * Hides seed from screen if application goes into inactive or background state
      *
@@ -323,7 +319,6 @@ class ViewSeed extends Component {
         this.navigateToStep('isViewingGeneralInfo');
         this.setState({ password: null, seed: '', token: '' });
     }
-
 
     render() {
         const { t, theme, is2FAEnabled } = this.props;
