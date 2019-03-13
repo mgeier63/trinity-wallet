@@ -111,6 +111,25 @@ const trytesToTrits = (input) => {
 };
 
 /**
+ * Converts tryte array to trits
+ *
+ * @method trytesToTrits
+ * @param {Array} input - array of Tryte chars to be converted.
+ *
+ * @return {Int8Array} trits
+ */
+const trytesArrayToTrits = (input) => {
+    const result = new Int8Array(input.length * 3);
+    for (let i = 0; i < input.length; i++) {
+        const index = input[i] === 57 /*9*/ ? 0 : input[i] - 65 /*A*/ + 1;
+        result[i * 3] = trytesTrits[index][0];
+        result[i * 3 + 1] = trytesTrits[index][1];
+        result[i * 3 + 2] = trytesTrits[index][2];
+    }
+    return result;
+};
+
+/**
  * Convert trit array to string
  * @param {array} trits - Input trit array
  * @returns {string} Output string
@@ -128,4 +147,14 @@ const tritsToChars = (trits) => {
     return chars;
 };
 
-module.exports = { capitalize, shorten, byteToChar, byteToTrit, bytesToTrits, tritsToChars, charToByte, trytesToTrits };
+module.exports = {
+    capitalize,
+    shorten,
+    byteToChar,
+    byteToTrit,
+    bytesToTrits,
+    tritsToChars,
+    charToByte,
+    trytesToTrits,
+    trytesArrayToTrits,
+};

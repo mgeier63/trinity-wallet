@@ -21,6 +21,8 @@ import SingleFooterButton from 'ui/components/SingleFooterButton';
 import { Icon } from 'ui/theme/icons';
 import { leaveNavigationBreadcrumb } from 'libs/bugsnag';
 
+import CustomTextInput from 'ui/components/CustomTextInput';
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -110,7 +112,7 @@ class LanguageSetup extends Component {
     }
 
     render() {
-        const { t, theme: { body } } = this.props;
+        const { t, theme: { body }, theme } = this.props;
 
         return (
             <TouchableWithoutFeedback
@@ -123,6 +125,22 @@ class LanguageSetup extends Component {
             >
                 <View style={{ flex: 1, backgroundColor: body.bg }}>
                     <View style={styles.container}>
+                        <CustomTextInput
+                            onRef={(c) => {
+                                this.accountNameField = c;
+                            }}
+                            label={t('addAdditionalSeed:accountName')}
+                            onValidTextChange={(value) => console.log(value)}
+                            theme={theme}
+                            autoCapitalize="words"
+                            maxLength={88}
+                            autoCorrect={false}
+                            enablesReturnKeyAutomatically
+                            returnKeyType="done"
+                            value={'FOO'}
+                            isSeedInput
+                        />
+
                         <AnimatedComponent
                             animationInType={['fadeIn']}
                             animationOutType={['fadeOut']}

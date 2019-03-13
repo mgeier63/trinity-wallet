@@ -22,4 +22,14 @@ public class Converter {
         }
         return byteArr;
     }
+
+    public static WritableArray charArrayToWritableArray(char[] charArray) {
+        WritableArray writableArray = new WritableNativeArray();
+        for (int i = 0; i < charArray.length; i++) {
+            writableArray.pushInt(charArray[i]);
+        }
+        return writableArray;
+    }
+
+
 }

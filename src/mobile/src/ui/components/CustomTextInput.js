@@ -8,7 +8,9 @@ import { Styling } from 'ui/theme/general';
 import { Icon } from 'ui/theme/icons';
 import { isAndroid } from 'libs/device';
 import { stringToUInt8, UInt8ToString } from 'libs/crypto';
-import { trytesToTrits, tritsToChars } from 'shared-modules/libs/iota/converter';
+import { trytesToTrits, trytesArrayToTrits, tritsToChars } from 'shared-modules/libs/iota/converter';
+
+const NonLeakingTextInput = require('ui/components/NonLeakingTextInput');
 
 const styles = StyleSheet.create({
     fieldContainer: {
@@ -210,14 +212,29 @@ class CustomTextInput extends Component {
      * @return {function}
      */
     onChangeText(value) {
+        console.log('XYZZY onChangeText ' + value);
+
+        console.log('XYZZY onChangeText ' + value.constructor);
+
+        console.log('XYZZY onChangeText ' + value[0].constructor);
+
         const { isPasswordInput, isSeedInput, onValidTextChange } = this.props;
         if (isSeedInput) {
-            if (value && !value.match(VALID_SEED_REGEX)) {
-                return;
+            if (value) {
+                if (value instanceof Array) {
+                    if (value.findIndex((i) => !(i === 57 /*9*/ || (i >= 65 /*A*/ && i <= 90)) /*Z*/) >= 0) {
+                        return;
+                    }
+                    return onValidTextChange(trytesArrayToTrits(value));
+                } else {
+                    if (!value.match(VALID_SEED_REGEX)) {
+                        return;
+                    }
+                    return onValidTextChange(trytesToTrits(value));
+                }
             }
-            return onValidTextChange(trytesToTrits(value));
         } else if (isPasswordInput) {
-            return onValidTextChange(stringToUInt8(value));
+            return onValidTextChange(value instanceof Array ? value : stringToUInt8(value));
         }
         onValidTextChange(value);
     }
@@ -439,7 +456,7 @@ class CustomTextInput extends Component {
                     ]}
                     testID={testID}
                 >
-                    <TextInput
+                    <NonLeakingTextInput
                         {...restProps}
                         ref={onRef}
                         style={[styles.textInput, { color: theme.input.color }]}

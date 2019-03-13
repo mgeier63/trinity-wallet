@@ -8,6 +8,8 @@ import com.facebook.react.ReactPackage;
 import com.facebook.react.shell.MainReactPackage;
 import com.horcrux.svg.SvgPackage;
 import com.learnium.RNDeviceInfo.RNDeviceInfo;
+
+import org.iota.mobile.NonLeakingReactTextInputPackage;
 import org.reactnative.camera.RNCameraPackage;
 import com.oblador.keychain.KeychainPackage;
 import com.peel.react.rnos.RNOSModule;
@@ -95,7 +97,8 @@ public class MainApplication extends NavigationApplication implements ShareAppli
                 new RNSharePackage(),
                 new RNViewShotPackage(),
                 new RealmReactPackage(),
-                new RNFetchBlobPackage()
+                new RNFetchBlobPackage(),
+                new NonLeakingReactTextInputPackage()
         );
     }
 

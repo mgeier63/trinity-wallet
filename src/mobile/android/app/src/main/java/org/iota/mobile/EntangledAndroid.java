@@ -55,7 +55,7 @@ public class EntangledAndroid extends ReactContextBaseJavaModule {
             }
 
             @Override
-            protected void onPostExecuteGuarded(ReadableNativeArray result) {
+                protected void onPostExecuteGuarded(ReadableNativeArray result) {
                 promise.resolve(result);
             }
         }.execute();
